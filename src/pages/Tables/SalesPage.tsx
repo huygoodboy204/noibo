@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
+import AddSaleModal from './components/AddSaleModal';
 
 // Constants for fetching
 const PAGE_SIZE = 20;
@@ -49,7 +50,7 @@ const getRelationalField = <T, K extends keyof T>(
 const SalesPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { session, isAuthenticated } = useAuth(); // Use session for token
+  const { session } = useAuth();
 
   // State for data, loading, error, pagination
   const [sales, setSales] = useState<SaleDisplay[]>([]);
@@ -58,6 +59,7 @@ const SalesPage: React.FC = () => {
   const [page, setPage] = useState<number>(1);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [totalCount, setTotalCount] = useState<number>(0);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Refs for managing fetch lifecycle
   const isMounted = useRef(true);
@@ -113,85 +115,127 @@ const SalesPage: React.FC = () => {
     }
   }, [session?.access_token]);
 
-  const fetchSales = useCallback(async (forceFetch = false, requestedPageOverride?: number) => {
-    const targetPage = requestedPageOverride ?? (forceFetch ? 1 : page);
-    if (!isMounted.current || (!forceFetch && isCurrentlyFetching.current) || (!forceFetch && lastSuccessfulFetchRef.current > 0 && (Date.now() - lastSuccessfulFetchRef.current < 2000))) { return; }
-    if (abortControllerRef.current) abortControllerRef.current.abort('New fetch for sales');
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-    isCurrentlyFetching.current = true; setLoading(true); setError(null);
-    if (forceFetch && page !== 1) setPage(1); else if (requestedPageOverride && page !== requestedPageOverride) setPage(requestedPageOverride);
+  const fetchSales = useCallback(async (forceFetch = false) => {
+    let fetchError: Error | null = null;
     try {
+      if (!isMounted.current) return;
+      if (!forceFetch) {
+        if (isCurrentlyFetching.current) return;
+        const now = Date.now();
+        if (lastSuccessfulFetchRef.current > 0 && (now - lastSuccessfulFetchRef.current < 2000)) return;
+      }
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+      isCurrentlyFetching.current = true;
+      setLoading(true);
+      setError(null);
+      if (forceFetch) setPage(1);
       if (forceFetch || totalCount === 0) await fetchTotalSalesCount(signal);
-      if (signal.aborted) throw new DOMException('Aborted count fetch sales', 'AbortError');
-      const from = (targetPage - 1) * PAGE_SIZE;
-      const timeoutPromise = new Promise<never>((_, reject) => { const id = setTimeout(() => { clearTimeout(id); reject(new Error(`Query sales (page ${targetPage}) timed out`)); }, TIMEOUT_DURATION); });
-      let resultHolder: { data: SaleDisplay[] | null; error: Error | null; count?: number | null } = { data: null, error: null };
+      const from = (page - 1) * PAGE_SIZE;
+      const timeoutDuration = 5000;
+      const timeout = new Promise<never>((_, reject) => {
+        const id = setTimeout(() => { clearTimeout(id); reject(new Error(`Query timed out after ${timeoutDuration}ms`)); }, timeoutDuration);
+      });
+      let result;
       try {
-        resultHolder = await Promise.race([directFetchSales(signal, targetPage), timeoutPromise]);
-      } catch (directErr: any) { resultHolder = { data: null, error: new Error(String(directErr.message || directErr)) }; }
-      if (signal.aborted) throw new DOMException('Aborted direct fetch sales', 'AbortError');
-      if (!resultHolder.data || resultHolder.error) {
-        if (resultHolder.error?.name === 'AbortError') throw resultHolder.error;
-        let lastSbError: Error | null = null;
-        try {
-            if (signal.aborted) throw new DOMException('Aborted Supabase fallback sales', 'AbortError');
-            const query = supabase.from('sales').select(SALES_SELECT_QUERY, { count: 'exact' }).order(SALES_ORDER_BY_COLUMN, { ascending: SALES_ORDER_BY_ASCENDING }).range(from, from + PAGE_SIZE - 1).abortSignal(signal);
-            const { data: sbData, error: sbError, count: sbCount } = await Promise.race([query, timeoutPromise]);
-            if (sbError) { lastSbError = new Error(sbError.message || 'Supabase query failed sales'); if ((sbError as any).name === 'AbortError' || sbError.message.includes('aborted')) lastSbError = new DOMException(sbError.message, 'AbortError'); throw lastSbError; }
-            resultHolder = { data: sbData as SaleDisplay[], error: null, count: sbCount };
-        } catch (retryErr: any) { lastSbError = retryErr; if (lastSbError?.name === 'AbortError') throw lastSbError; throw lastSbError || new Error('Supabase fallback sales failed'); }
+        result = await Promise.race([
+          directFetchSales(signal, page),
+          timeout
+        ]);
+      } catch (directError) {
+        // fallback nếu cần
+        result = { data: null, error: directError };
       }
-      if (signal.aborted) throw new DOMException('Aborted all fetch sales', 'AbortError');
-      if (!resultHolder.data || resultHolder.error) throw resultHolder.error || new Error(`Failed to fetch sales (page ${targetPage})`);
-      const fetchedData = resultHolder.data as SaleDisplay[];
-      console.log('[SalesPage] fetchSales - Fetched Data (raw):', fetchedData);
-      if (fetchedData && fetchedData.length > 0) {
-        console.log('[SalesPage] fetchSales - First sale raw data:', JSON.parse(JSON.stringify(fetchedData[0])));
-      }
-      const newTotalCount = resultHolder.count;
+      if (typeof result === 'undefined') throw new Error('Internal error: Failed to get data fetching result.');
+      const { data, error: fetchErr } = result;
+      if (fetchErr) throw fetchErr;
+      if (!data) throw new Error('No data received from server');
       if (isMounted.current) {
-        setSales(prev => targetPage === 1 ? fetchedData : [...prev, ...fetchedData]);
-        setHasMore(fetchedData.length === PAGE_SIZE);
-        if (newTotalCount !== undefined && newTotalCount !== null) setTotalCount(newTotalCount);
+        if (forceFetch) {
+          setSales(data);
+        } else {
+          setSales(prev => page === 1 ? data : [...prev, ...data]);
+        }
+        setHasMore(data.length === PAGE_SIZE);
         lastSuccessfulFetchRef.current = Date.now();
       }
     } catch (err: any) {
-      if (err.name === 'AbortError' || err.message?.includes('Aborted')) console.log(`[SalesPage] Fetch aborted: ${err.message}.`);
-      else if (isMounted.current) setError(err.message || 'Unknown error fetching sales');
+      fetchError = err;
+      if (err.name === 'AbortError' || err.message === 'Request aborted') return;
+      if (isMounted.current) {
+        setError(err instanceof Error ? err.message : String(err));
+        if (page === 1) setSales([]);
+      }
     } finally {
+      if (isMounted.current && (!fetchError || (fetchError.name !== 'AbortError' && fetchError.message !== 'Request aborted'))) {
+        setLoading(false);
+      }
       isCurrentlyFetching.current = false;
-      if (isMounted.current) setLoading(false);
     }
   }, [page, totalCount, session?.access_token, fetchTotalSalesCount, directFetchSales]);
 
-  const loadMoreSales = useCallback(() => { if (!loading && hasMore && !isCurrentlyFetching.current) setPage(p => p + 1); }, [loading, hasMore, page]);
-  const refreshSales = useCallback(() => { setPage(1); fetchSales(true, 1); }, [fetchSales]);
+  const loadMoreSales = useCallback(() => {
+    if (!loading && hasMore) {
+      setPage(prevPage => prevPage + 1);
+    }
+  }, [loading, hasMore]);
 
-  useEffect(() => { /* mount/unmount */ 
-    isMounted.current = true; prevPathname.current = location.pathname;
-    setSales([]); setPage(1); setHasMore(true); setError(null); setTotalCount(0);
-    isCurrentlyFetching.current = false; lastSuccessfulFetchRef.current = 0;
-    if (mountTimerId.current) clearTimeout(mountTimerId.current);
-    mountTimerId.current = setTimeout(() => { if (isMounted.current) fetchSales(true, 1); }, 50);
-    return () => { if(mountTimerId.current) clearTimeout(mountTimerId.current); isMounted.current = false; if (abortControllerRef.current) { abortControllerRef.current.abort('SalesPage unmounted'); abortControllerRef.current = null; } if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); };
-  }, [location.pathname, fetchSales]);
+  useEffect(() => {
+    isMounted.current = true;
+    setSales([]);
+    setPage(1);
+    setHasMore(true);
+    setError(null);
+    setTotalCount(0);
+    isCurrentlyFetching.current = false;
+    lastSuccessfulFetchRef.current = 0;
+    prevPathname.current = location.pathname;
+    const timer = setTimeout(() => {
+      if (isMounted.current) fetchSales(true);
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      isMounted.current = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort('SalesPage unmounted');
+        abortControllerRef.current = null;
+      }
+      if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current);
+    };
+  }, [location.pathname]);
 
-  useEffect(() => { /* page change */ if (page > 1 && isMounted.current) fetchSales(false, page); }, [page, fetchSales]); 
-
-  useEffect(() => { /* visibility change */ 
-    const handleVisibilityChange = () => { if (document.visibilityState === 'visible' && isMounted.current && location.pathname.includes('/tables/sales')) { if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); visibilityDebounceRef.current = window.setTimeout(() => { if (isMounted.current) { setPage(1); fetchSales(true, 1); } visibilityDebounceRef.current = null; }, 300); } };
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isMounted.current && location.pathname.includes('/tables/sales')) {
+        if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current);
+        visibilityDebounceRef.current = window.setTimeout(() => {
+          if (isMounted.current) {
+            setPage(1);
+            fetchSales(true);
+          }
+          visibilityDebounceRef.current = null;
+        }, 300);
+      }
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => { document.removeEventListener('visibilitychange', handleVisibilityChange); if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); };
-  }, [location.pathname, fetchSales]); 
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current);
+    };
+  }, [location.pathname]);
 
   // --- End Fetch logic ---
 
-  const handleAddSale = () => alert('Chức năng Add Sale sẽ được thêm sau!');
-  const handleUpdateSale = (saleId: string) => alert(`Chức năng Cập nhật Sale (ID: ${saleId}) sẽ được thêm sau!`);
+  const handleAddSale = () => setShowAddModal(true);
+  const handleCloseAddModal = () => setShowAddModal(false);
+  const handleSaleAdded = () => {
+    setShowAddModal(false);
+    fetchSales(true);
+  };
 
   if (loading && !sales.length && page === 1) return <p>Loading sales...</p>;
-  if (error) return ( <div className="container mx-auto p-4 text-center"> <p className="text-red-500">Error: {error}</p> <button onClick={refreshSales} className="mt-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Try Again</button> </div> );
+  if (error) return ( <div className="container mx-auto p-4 text-center"> <p className="text-red-500">Error: {error}</p> <button onClick={() => fetchSales(true)} className="mt-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Try Again</button> </div> );
 
   return (
     <div className="container mx-auto p-4">
@@ -201,7 +245,7 @@ const SalesPage: React.FC = () => {
           Add Sale
         </button>
       </div>
-      
+      {showAddModal && <AddSaleModal onClose={handleCloseAddModal} onAdded={handleSaleAdded} />}
       {sales.length === 0 && !loading ? (
         <p>No sales found.</p>
       ) : (
@@ -239,7 +283,7 @@ const SalesPage: React.FC = () => {
                   <td className="py-3 px-6 text-left">{sale.invoice_date ? new Date(sale.invoice_date).toLocaleDateString() : 'N/A'}</td>
                   <td className="py-3 px-6 text-left">{getRelationalField(sale.handler, 'full_name') || 'N/A'}</td>
                   <td className="py-3 px-6 text-center">
-                    <button onClick={() => handleUpdateSale(sale.id)} className="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">
+                    <button onClick={() => {}} className="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">
                       Edit
                     </button>
                   </td>
@@ -249,15 +293,15 @@ const SalesPage: React.FC = () => {
           </table>
         </div>
       )}
-       {hasMore && !loading && (
-            <div className="text-center mt-4">
-              <button onClick={loadMoreSales} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled={loading}>
-                {loading ? 'Loading...' : 'Load More'}
-              </button>
-            </div>
-        )}
-        {loading && sales.length > 0 && page > 1 && (
-             <p className="text-center mt-4 text-gray-600">Loading more sales...</p>
+      {hasMore && !loading && (
+        <div className="text-center mt-4">
+          <button onClick={loadMoreSales} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled={loading}>
+            {loading ? 'Loading...' : 'Load More'}
+          </button>
+        </div>
+      )}
+      {loading && sales.length > 0 && page > 1 && (
+        <p className="text-center mt-4 text-gray-600">Loading more sales...</p>
       )}
     </div>
   );

@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'react-toastify';
-import { useModalLayout } from '../../../src/contexts/ModalLayoutContext';
 
 const CLIENT_RANK_OPTIONS = ['A', 'B', 'C', 'D'];
 const CLIENT_PHASE_OPTIONS = ['Prospecting', 'Qualification', 'Needs_Analysis', 'Proposal_Sent', 'Negotiation', 'Closed_Won', 'Closed_Lost', 'On_Hold'];
@@ -12,14 +11,8 @@ type EditClientModalProps = {
 };
 
 const EditClientModal: React.FC<EditClientModalProps> = ({ client, onClose, onSave }) => {
-  const { setIsModalOpen } = useModalLayout();
   const [formData, setFormData] = useState({ ...client });
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setIsModalOpen(true);
-    return () => setIsModalOpen(false);
-  }, [setIsModalOpen]);
 
   const getAccessToken = () => {
     try {

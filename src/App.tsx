@@ -20,7 +20,6 @@ import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
-import { ModalLayoutProvider } from '../../src/contexts/ModalLayoutContext';
 
 // New Page Imports
 import DashboardPage from "./pages/Dashboard/DashboardPage";
@@ -147,23 +146,21 @@ export default function App() {
   };
 
   return (
-    <ModalLayoutProvider>
-      <Router>
-        <ScrollToTop />
-        <AppRoutes />
-        <ToastContainer
-          position="top-right"
-          autoClose={3000}
-          hideProgressBar={false}
-          newestOnTop
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
-          theme="light"
-        />
-      </Router>
-    </ModalLayoutProvider>
+    <Router>
+      <ScrollToTop />
+      <AppRoutes />
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+    </Router>
   );
 }

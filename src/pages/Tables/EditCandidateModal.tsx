@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Candidate } from '../../types/index';
-import { useModalLayout } from '../../../../src/contexts/ModalLayoutContext';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer_Not_To_Say'];
 const VISA_STATUS_OPTIONS = ['Citizen', 'Permanent_Resident', 'Work_Permit_Holder', 'Dependent_Pass_Holder', 'Student_Pass_Holder', 'Requires_Sponsorship', 'Not_Applicable'];
@@ -16,7 +15,6 @@ interface EditCandidateModalProps {
 }
 
 const EditCandidateModal: React.FC<EditCandidateModalProps> = ({ candidate, onClose, onSave }) => {
-  const { setIsModalOpen } = useModalLayout();
   const [form, setForm] = useState({
     name: candidate.name,
     email: candidate.email,
@@ -31,11 +29,6 @@ const EditCandidateModal: React.FC<EditCandidateModalProps> = ({ candidate, onCl
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    setIsModalOpen(true);
-    return () => setIsModalOpen(false);
-  }, [setIsModalOpen]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

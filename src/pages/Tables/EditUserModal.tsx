@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { useModalLayout } from '../../contexts/ModalLayoutContext';
+import React, { useState } from 'react';
 
 interface UserEdit {
   id: string;
@@ -30,7 +29,6 @@ const STATUS = [
 ];
 
 const EditUserModal: React.FC<EditUserModalProps> = ({ user, onClose, onSave }) => {
-  const { setIsModalOpen } = useModalLayout();
   const [form, setForm] = useState({
     full_name: user.full_name || '',
     email: user.email || '',
@@ -88,11 +86,6 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ user, onClose, onSave }) 
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    setIsModalOpen(true);
-    return () => setIsModalOpen(false);
-  }, [setIsModalOpen]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 backdrop-blur-sm">

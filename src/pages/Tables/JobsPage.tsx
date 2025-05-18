@@ -503,13 +503,13 @@ const JobsPage: React.FC = () => {
                   <span className="px-4 py-2 rounded-full bg-gray-200 text-gray-800 text-base font-bold shadow-sm">
                     {getOwnerName(job.owner_details)}
                   </span>
-                )}
+                      )}
                       {job.industry_category && (
                   <span className="px-4 py-2 rounded-full bg-yellow-100 text-yellow-800 text-base font-bold shadow-sm">{job.industry_category}</span>
                       )}
                       {job.job_category && (
                   <span className="px-4 py-2 rounded-full bg-green-100 text-green-800 text-base font-bold shadow-sm">{job.job_category}</span>
-                )}
+                      )}
                 {job.work_location && (
                   <span className="px-4 py-2 rounded-full bg-blue-100 text-blue-800 text-base font-bold shadow-sm">{job.work_location}</span>
                 )}
@@ -567,7 +567,7 @@ const JobsPage: React.FC = () => {
                         <div className="flex justify-between items-center"><span className="font-semibold">Client:</span><span>{getClientName(job.clients) ?? 'N/A'}</span></div>
                         {getClientWebsite(job.clients) && (
                           <div className="flex justify-between items-center"><span className="font-semibold">Client Website:</span><a href={getClientWebsite(job.clients)} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-semibold underline">{getClientWebsite(job.clients)}</a></div>
-                        )}
+                      )}
                       </div>
                     </div>
                     {/* Timestamps Card */}
@@ -603,7 +603,7 @@ const JobsPage: React.FC = () => {
             {loading ? 'Loading...' : 'Load More'}
               </button>
             </div>
-      )}
+          )}
       {loading && jobs.length > 0 && page > 1 && (
         <p className="text-center mt-4 text-gray-600">Loading more jobs...</p>
       )}
