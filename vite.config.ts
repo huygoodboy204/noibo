@@ -1,28 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import svgr from "vite-plugin-svgr";
 import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/tdc/',
-  plugins: [
-    react(),
-    svgr({
-      svgrOptions: {
-        icon: true,
-        // This will transform your SVG to a React component
-        exportType: "named",
-        namedExport: "ReactComponent",
-      },
-    }),
-  ],
+  base: '/noibo/',
+  plugins: [react()],
+  publicDir: 'public',
   build: {
-    // Bỏ qua lỗi TypeScript khi build
+    outDir: 'dist',
+    assetsDir: 'assets',
     rollupOptions: {
-      onwarn(warning, warn) {
-        if (warning.code === 'TS2307') return
-        warn(warning)
+      input: {
+        main: path.resolve(__dirname, 'index.html')
       }
     }
   },
@@ -31,4 +21,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    historyApiFallback: true
+  }
 });
