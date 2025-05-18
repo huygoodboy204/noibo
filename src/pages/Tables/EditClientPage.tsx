@@ -73,49 +73,49 @@ const EditClientPage: React.FC = () => {
           {/* Basic Information */}
           <div>
             <label className="block font-semibold mb-1">Client Name *</label>
-            <input name="client_name" value={form.client_name || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" required />
+            <input name="client_name" value={(form as any).client_name || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" required />
           </div>
           <div>
             <label className="block font-semibold mb-1">Registration No</label>
-            <input name="registration_no" value={form.registration_no || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input name="registration_no" value={(form as any).registration_no || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block font-semibold mb-1">Website URL</label>
-            <input name="website_url" value={form.website_url || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input name="website_url" value={(form as any).website_url || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block font-semibold mb-1">Client Category</label>
-            <input name="client_category" value={form.client_category || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input name="client_category" value={(form as any).client_category || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block font-semibold mb-1">Client Industry</label>
-            <input name="client_industry" value={form.client_industry || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input name="client_industry" value={(form as any).client_industry || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block font-semibold mb-1">Location</label>
-            <input name="location" value={form.location || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input name="location" value={(form as any).location || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block font-semibold mb-1">Address</label>
-            <input name="address" value={form.address || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input name="address" value={(form as any).address || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block font-semibold mb-1">Rank</label>
-            <select name="client_rank" value={form.client_rank || ''} onChange={handleChange} className="w-full border rounded px-3 py-2">
+            <select name="client_rank" value={(form as any).client_rank || ''} onChange={handleChange} className="w-full border rounded px-3 py-2">
               <option value="">Select rank</option>
               {CLIENT_RANK_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
           <div>
             <label className="block font-semibold mb-1">Phase</label>
-            <select name="phase" value={form.phase || ''} onChange={handleChange} className="w-full border rounded px-3 py-2">
+            <select name="phase" value={(form as any).phase || ''} onChange={handleChange} className="w-full border rounded px-3 py-2">
               <option value="">Select phase</option>
               {CLIENT_PHASE_OPTIONS.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
             </select>
           </div>
           <div>
             <label className="block font-semibold mb-1">Phase Date</label>
-            <input type="date" name="phase_date" value={form.phase_date || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+            <input type="date" name="phase_date" value={(form as any).phase_date || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
           </div>
         </div>
 
@@ -125,11 +125,11 @@ const EditClientPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block font-semibold mb-1">Business Overview</label>
-              <textarea name="business_overview" value={form.business_overview || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" rows={4} />
+              <textarea name="business_overview" value={(form as any).business_overview || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" rows={4} />
             </div>
             <div>
               <label className="block font-semibold mb-1">Phase Memo</label>
-              <textarea name="phase_memo" value={form.phase_memo || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" rows={4} />
+              <textarea name="phase_memo" value={(form as any).phase_memo || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" rows={4} />
             </div>
           </div>
         </div>
@@ -140,35 +140,35 @@ const EditClientPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block font-semibold mb-1">Working Hours</label>
-              <input name="working_hours" value={form.working_hours || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="working_hours" value={(form as any).working_hours || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Insurance</label>
-              <input name="insurance" value={form.insurance || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="insurance" value={(form as any).insurance || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Medical Expense</label>
-              <input name="medical_expense" value={form.medical_expense || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="medical_expense" value={(form as any).medical_expense || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Bonus</label>
-              <input name="bonus" value={form.bonus || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="bonus" value={(form as any).bonus || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Allowance</label>
-              <input name="allowance" value={form.allowance || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="allowance" value={(form as any).allowance || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Sick Leave</label>
-              <input name="sick_leave" value={form.sick_leave || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="sick_leave" value={(form as any).sick_leave || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Annual Leave</label>
-              <input name="annual_leave" value={form.annual_leave || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="annual_leave" value={(form as any).annual_leave || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
             <div>
               <label className="block font-semibold mb-1">Probation Period</label>
-              <input name="probation_period" value={form.probation_period || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
+              <input name="probation_period" value={(form as any).probation_period || ''} onChange={handleChange} className="w-full border rounded px-3 py-2" />
             </div>
           </div>
         </div>

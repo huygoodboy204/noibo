@@ -66,19 +66,19 @@ const ClientsPage: React.FC = () => {
   };
 
   // Lấy danh sách unique cho filter dropdown
-  const ownerOptions = Array.from(new Set(clients.map(c => c.owner?.full_name).filter(Boolean)));
-  const locationOptions = Array.from(new Set(clients.map(c => c.location).filter(Boolean)));
-  const industryOptions = Array.from(new Set(clients.map(c => c.client_industry).filter(Boolean)));
-  const categoryOptions = Array.from(new Set(clients.map(c => c.client_category).filter(Boolean)));
+  const ownerOptions = Array.from(new Set(clients.map(c => (c as any).owner?.full_name).filter(Boolean)));
+  const locationOptions = Array.from(new Set(clients.map(c => (c as any).location).filter(Boolean)));
+  const industryOptions = Array.from(new Set(clients.map(c => (c as any).client_industry).filter(Boolean)));
+  const categoryOptions = Array.from(new Set(clients.map(c => (c as any).client_category).filter(Boolean)));
 
   const filteredClients = clients.filter(client =>
     (searchTerm === '' || client.client_name.toLowerCase().includes(searchTerm.toLowerCase())) &&
-    (filterRank === '' || client.client_rank === filterRank) &&
-    (filterPhase === '' || client.phase === filterPhase) &&
-    (filterOwner === '' || client.owner?.full_name === filterOwner) &&
-    (filterLocation === '' || client.location === filterLocation) &&
-    (filterIndustry === '' || client.client_industry === filterIndustry) &&
-    (filterCategory === '' || client.client_category === filterCategory)
+    (filterRank === '' || (client as any).client_rank === filterRank) &&
+    (filterPhase === '' || (client as any).phase === filterPhase) &&
+    (filterOwner === '' || (client as any).owner?.full_name === filterOwner) &&
+    (filterLocation === '' || (client as any).location === filterLocation) &&
+    (filterIndustry === '' || (client as any).client_industry === filterIndustry) &&
+    (filterCategory === '' || (client as any).client_category === filterCategory)
   );
 
   if (loading && !clients.length) {
@@ -160,36 +160,36 @@ const ClientsPage: React.FC = () => {
               <div key={client.id} className="rounded-xl shadow-lg bg-white p-6 flex flex-col gap-2 border hover:shadow-2xl transition-all">
                 <div className="flex items-center gap-3 mb-2">
                   <h3 className="font-bold text-xl text-gray-800 flex-1">{client.client_name}</h3>
-                  {client.client_rank && (
-                    <span className={`text-xs px-2 py-1 rounded-full text-white font-semibold ${getBadgeColor(client.client_rank)}`}>{client.client_rank}</span>
+                  {(client as any).client_rank && (
+                    <span className={`text-xs px-2 py-1 rounded-full text-white font-semibold ${getBadgeColor((client as any).client_rank)}`}>{(client as any).client_rank}</span>
                   )}
-                  {client.phase && (
-                    <span className={`text-xs px-2 py-1 rounded-full text-white font-semibold ${getPhaseColor(client.phase)}`}>{client.phase.replace(/_/g, ' ')}</span>
+                  {(client as any).phase && (
+                    <span className={`text-xs px-2 py-1 rounded-full text-white font-semibold ${getPhaseColor((client as any).phase)}`}>{(client as any).phase.replace(/_/g, ' ')}</span>
                   )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-                  {client.registration_no && <div><span className="font-semibold">Reg No:</span> {client.registration_no}</div>}
-                  {client.website_url && <div><span className="font-semibold">Website:</span> <a href={client.website_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{client.website_url}</a></div>}
-                  {client.client_category && <div><span className="font-semibold">Category:</span> {client.client_category}</div>}
-                  {client.client_industry && <div><span className="font-semibold">Industry:</span> {client.client_industry}</div>}
-                  {client.location && <div><span className="font-semibold">Location:</span> {client.location}</div>}
-                  {client.address && <div><span className="font-semibold">Address:</span> {client.address}</div>}
-                  {client.business_overview && <div className="md:col-span-2"><span className="font-semibold">Business Overview:</span> {client.business_overview}</div>}
-                  {client.working_hours && <div><span className="font-semibold">Working Hours:</span> {client.working_hours}</div>}
-                  {client.insurance && <div><span className="font-semibold">Insurance:</span> {client.insurance}</div>}
-                  {client.medical_expense && <div><span className="font-semibold">Medical Expense:</span> {client.medical_expense}</div>}
-                  {client.bonus && <div><span className="font-semibold">Bonus:</span> {client.bonus}</div>}
-                  {client.allowance && <div><span className="font-semibold">Allowance:</span> {client.allowance}</div>}
-                  {client.sick_leave && <div><span className="font-semibold">Sick Leave:</span> {client.sick_leave}</div>}
-                  {client.annual_leave && <div><span className="font-semibold">Annual Leave:</span> {client.annual_leave}</div>}
-                  {client.probation_period && <div><span className="font-semibold">Probation Period:</span> {client.probation_period}</div>}
-                  {client.phase_date && <div><span className="font-semibold">Phase Date:</span> {client.phase_date}</div>}
-                  {client.phase_memo && <div className="md:col-span-2"><span className="font-semibold">Phase Memo:</span> {client.phase_memo}</div>}
-                  {client.created_by_id && <div><span className="font-semibold">Created By:</span> {client.created_by_id}</div>}
-                  {client.updated_by_id && <div><span className="font-semibold">Updated By:</span> {client.updated_by_id}</div>}
-                  {client.created_at && <div><span className="font-semibold">Created:</span> {new Date(client.created_at).toLocaleString()}</div>}
-                  {client.updated_at && <div><span className="font-semibold">Updated:</span> {new Date(client.updated_at).toLocaleString()}</div>}
-                  {client.owner_id && <div><span className="font-semibold">Owner:</span> {client.owner?.full_name || client.owner_id}</div>}
+                  {(client as any).registration_no && <div><span className="font-semibold">Reg No:</span> {(client as any).registration_no}</div>}
+                  {(client as any).website_url && <div><span className="font-semibold">Website:</span> <a href={(client as any).website_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{(client as any).website_url}</a></div>}
+                  {(client as any).client_category && <div><span className="font-semibold">Category:</span> {(client as any).client_category}</div>}
+                  {(client as any).client_industry && <div><span className="font-semibold">Industry:</span> {(client as any).client_industry}</div>}
+                  {(client as any).location && <div><span className="font-semibold">Location:</span> {(client as any).location}</div>}
+                  {(client as any).address && <div><span className="font-semibold">Address:</span> {(client as any).address}</div>}
+                  {(client as any).business_overview && <div className="md:col-span-2"><span className="font-semibold">Business Overview:</span> {(client as any).business_overview}</div>}
+                  {(client as any).working_hours && <div><span className="font-semibold">Working Hours:</span> {(client as any).working_hours}</div>}
+                  {(client as any).insurance && <div><span className="font-semibold">Insurance:</span> {(client as any).insurance}</div>}
+                  {(client as any).medical_expense && <div><span className="font-semibold">Medical Expense:</span> {(client as any).medical_expense}</div>}
+                  {(client as any).bonus && <div><span className="font-semibold">Bonus:</span> {(client as any).bonus}</div>}
+                  {(client as any).allowance && <div><span className="font-semibold">Allowance:</span> {(client as any).allowance}</div>}
+                  {(client as any).sick_leave && <div><span className="font-semibold">Sick Leave:</span> {(client as any).sick_leave}</div>}
+                  {(client as any).annual_leave && <div><span className="font-semibold">Annual Leave:</span> {(client as any).annual_leave}</div>}
+                  {(client as any).probation_period && <div><span className="font-semibold">Probation Period:</span> {(client as any).probation_period}</div>}
+                  {(client as any).phase_date && <div><span className="font-semibold">Phase Date:</span> {(client as any).phase_date}</div>}
+                  {(client as any).phase_memo && <div className="md:col-span-2"><span className="font-semibold">Phase Memo:</span> {(client as any).phase_memo}</div>}
+                  {(client as any).created_by_id && <div><span className="font-semibold">Created By:</span> {(client as any).created_by_id}</div>}
+                  {(client as any).updated_by_id && <div><span className="font-semibold">Updated By:</span> {(client as any).updated_by_id}</div>}
+                  {(client as any).created_at && <div><span className="font-semibold">Created:</span> {new Date((client as any).created_at).toLocaleString()}</div>}
+                  {(client as any).updated_at && <div><span className="font-semibold">Updated:</span> {new Date((client as any).updated_at).toLocaleString()}</div>}
+                  {(client as any).owner_id && <div><span className="font-semibold">Owner:</span> {(client as any).owner?.full_name || (client as any).owner_id}</div>}
                 </div>
                 <div className="flex justify-end mt-2">
                   <button
