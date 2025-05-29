@@ -23,6 +23,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authTimeout, setAuthTimeout] = useState(false);
 
   const fetchUserRole = useCallback(async (userId: string) => {
     try {
@@ -93,6 +94,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const currentUser = currentSession?.user ?? null;
             setUser(currentUser);
 
+            // Bỏ qua việc fetch role khi có USER_UPDATED event
+            if (_event === 'USER_UPDATED') {
+              console.log('[AuthContext] Skipping role fetch for USER_UPDATED event');
+              return;
+            }
+
             if (currentUser && currentUser.id) {
               console.log(`[AuthContext] Auth state changed. User ID: ${currentUser.id}. Fetching role...`);
               await fetchUserRole(currentUser.id);
@@ -130,9 +137,44 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signOut = useCallback(async () => {
     try {
       console.log('[AuthContext] Signing out...');
-      await supabase.auth.signOut();
+      
+      // Tạo AbortController để có thể hủy request nếu cần
+      const controller = new AbortController();
+      const signal = controller.signal;
+
+      // Xóa session trong Supabase với timeout
+      const timeoutDuration = 5000; // 5 seconds
+      const timeout = new Promise<never>((_, reject) => {
+        const id = setTimeout(() => {
+          clearTimeout(id);
+          reject(new Error(`Sign out timed out after ${timeoutDuration}ms`));
+        }, timeoutDuration);
+      });
+
+      // Thực hiện signOut với timeout
+      const { error } = await Promise.race([
+        supabase.auth.signOut(),
+        timeout
+      ]);
+
+      if (error) throw error;
+
+      // Reset state
+      setSession(null);
+      setUser(null);
+      setUserRole(null);
+      
+      // Chuyển hướng về trang đăng nhập
+      window.location.href = '/signin';
+      
+      console.log('[AuthContext] Sign out successful');
     } catch (error: any) {
       console.error('[AuthContext] Error signing out:', error.message || error);
+      // Nếu có lỗi, vẫn reset state và chuyển hướng
+      setSession(null);
+      setUser(null);
+      setUserRole(null);
+      window.location.href = '/signin';
     }
   }, []);
 
@@ -150,6 +192,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     console.log('[AuthContext] Value updated - UserRole:', userRole, 'IsAuth:', isAuthenticated, 'Loading:', loading);
   }, [userRole, isAuthenticated, loading]);
+
+  // Timeout logic: nếu loading quá 10s thì hiện thông báo
+  useEffect(() => {
+    if (loading) {
+      const timer = setTimeout(() => setAuthTimeout(true), 10000);
+      return () => clearTimeout(timer);
+    } else {
+      setAuthTimeout(false);
+    }
+  }, [loading]);
+
+  // Render thông báo nếu timeout
+  if (authTimeout) {
+    return (
+      <div style={{textAlign:'center',marginTop:40}}>
+        <p>Xác thực quá lâu, vui lòng đăng nhập lại.</p>
+        <button onClick={() => window.location.reload()} style={{padding:'8px 16px',borderRadius:6,background:'#2563eb',color:'#fff',border:'none'}}>Đăng nhập lại</button>
+      </div>
+    );
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -52,6 +52,7 @@ interface JobDisplay {
   updated_at?: string;
   job_summary?: string | null;
   requirements?: string | null;
+  website_url?: string | null;
 }
 
 // Helper cho trường liên kết (object hoặc array)
@@ -80,6 +81,14 @@ const getOwnerName = (owner_details: any) => {
   if (Array.isArray(owner_details)) return owner_details[0]?.full_name;
   return owner_details.full_name;
 };
+
+// Helper tách thành phố từ work_location hoặc address
+function extractCity(address: string | null | undefined): string {
+  if (!address) return '';
+  // Lấy từ cuối cùng sau dấu phẩy, hoặc nếu không có thì lấy nguyên chuỗi
+  const parts = address.split(',').map(s => s.trim());
+  return parts.length > 1 ? parts[parts.length - 1] : address;
+}
 
 const JobsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -402,23 +411,14 @@ const JobsPage: React.FC = () => {
     }
   };
 
-  const filteredJobs = jobs.filter(job => {
-    const typedJob = job as JobDisplay;
-    const clientName = getClientName(typedJob.clients);
-    const ownerName = getOwnerName(typedJob.owner_details);
-    const matchesSearch = searchTerm === '' || 
-      typedJob.position_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ownerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      typedJob.work_location?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPhase = selectedPhase === '' || typedJob.phase === selectedPhase;
-    if (filterCategory && job.industry_category !== filterCategory) return false;
-    if (filterJobType && job.job_category !== filterJobType) return false;
-    if (filterLocation && job.work_location !== filterLocation) return false;
-    if (filterClient && getClientName(job.clients) !== filterClient) return false;
-    if (filterRanking && job.job_rank !== filterRanking) return false;
-    return matchesSearch && matchesPhase;
-  });
+  // Lấy danh sách unique city cho filter location
+  const cityOptions = Array.from(new Set(jobs.map(j => extractCity(j.work_location)).filter(Boolean)));
+
+  const filteredJobs = jobs.filter(job =>
+    job.phase === 'Open' &&
+    (searchTerm === '' || job.position_title?.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (filterLocation === '' || extractCity(job.work_location) === filterLocation)
+  );
 
   if (loading && !jobs.length && page === 1) { // Show loading only for initial load
     return <p>Loading jobs...</p>;
@@ -458,11 +458,9 @@ const JobsPage: React.FC = () => {
               <option key={type || ''} value={type || ''}>{type}</option>
             ))}
           </select>
-          <select className="border-2 border-blue-200 rounded-xl px-4 py-3 text-lg font-semibold" value={filterLocation} onChange={e => setFilterLocation(e.target.value)}>
-            <option value="">Location</option>
-            {[...new Set(jobs.map(j => j.work_location).filter(Boolean))].map(loc => (
-              <option key={loc || ''} value={loc || ''}>{loc}</option>
-            ))}
+          <select value={filterLocation || ''} onChange={e => setFilterLocation(e.target.value)} className="px-2 py-2 border rounded">
+            <option value="">Tất cả thành phố</option>
+            {cityOptions.map(city => <option key={city} value={city}>{city}</option>)}
           </select>
           <select className="border-2 border-blue-200 rounded-xl px-4 py-3 text-lg font-semibold" value={filterClient} onChange={e => setFilterClient(e.target.value)}>
             <option value="">Client</option>
@@ -477,132 +475,49 @@ const JobsPage: React.FC = () => {
             ))}
           </select>
         </div>
-            {filteredJobs.map((job) => (
-          <div key={job.id} className="bg-white rounded-2xl shadow-lg p-8 mb-8 hover:bg-blue-50 transition">
-            {/* Header card */}
-            <div className="flex items-center justify-between cursor-pointer mb-2" onClick={() => handleExpand(job.id)}>
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-extrabold text-2xl text-blue-900">{job.position_title}</span>
-                {/* Badge client */}
-                {getClientName(job.clients) && (
-                  <span className="px-4 py-2 rounded-full bg-purple-100 text-purple-800 text-base font-bold shadow-sm">
-                    {getClientName(job.clients)}
-                    {getClientWebsite(job.clients) && (
-                      <a href={getClientWebsite(job.clients)} target="_blank" rel="noopener noreferrer" className="ml-2 underline text-sm text-purple-700">Website</a>
-                    )}
-                  </span>
-                )}
-                {/* Badge HR contact */}
-                {getHrContactName(job.hr_contacts) && (
-                  <span className="px-4 py-2 rounded-full bg-orange-100 text-orange-800 text-base font-bold shadow-sm">
-                    {getHrContactName(job.hr_contacts)}
-                      </span>
-                )}
-                {/* Badge owner */}
-                {getOwnerName(job.owner_details) && (
-                  <span className="px-4 py-2 rounded-full bg-gray-200 text-gray-800 text-base font-bold shadow-sm">
-                    {getOwnerName(job.owner_details)}
-                  </span>
-                )}
-                      {job.industry_category && (
-                  <span className="px-4 py-2 rounded-full bg-yellow-100 text-yellow-800 text-base font-bold shadow-sm">{job.industry_category}</span>
-                      )}
-                      {job.job_category && (
-                  <span className="px-4 py-2 rounded-full bg-green-100 text-green-800 text-base font-bold shadow-sm">{job.job_category}</span>
-                )}
-                {job.work_location && (
-                  <span className="px-4 py-2 rounded-full bg-blue-100 text-blue-800 text-base font-bold shadow-sm">{job.work_location}</span>
-                )}
-                {job.job_rank && (
-                  <span className="px-4 py-2 rounded-full bg-pink-100 text-pink-800 text-base font-bold shadow-sm">{job.job_rank}</span>
-                )}
+        <div className="space-y-6 mt-6">
+          {filteredJobs.map(job => (
+            <div key={job.id} className="flex flex-col md:flex-row items-center bg-white rounded-2xl shadow-lg border border-pink-100 p-6 hover:shadow-2xl transition-shadow duration-200">
+              {/* Avatar/logo hoặc icon job */}
+              <div className="flex-shrink-0 w-16 h-16 rounded-full bg-pink-100 flex items-center justify-center text-pink-600 text-2xl font-bold mr-0 md:mr-6 mb-4 md:mb-0">
+                <i className="fas fa-briefcase"></i>
               </div>
-              <button type="button" tabIndex={-1} className="focus:outline-none">
-                <span className={`transform transition-transform text-2xl text-blue-700 ${expandedJobId === job.id ? 'rotate-90' : ''}`}>▶</span>
-              </button>
+              {/* Thông tin chính */}
+              <div className="flex-1 w-full md:w-auto">
+                <div className="flex flex-col md:flex-row md:items-center gap-2">
+                  <h2 className="text-xl font-bold text-pink-700 mr-2">{job.position_title}</h2>
+                  {job.clients && job.clients[0]?.client_name && <span className="text-xs bg-pink-50 text-pink-500 rounded px-2 py-1 ml-0 md:ml-2">{job.clients[0].client_name}</span>}
+                  {job.website_url && <a href={job.website_url} target="_blank" rel="noopener noreferrer" className="text-pink-500 hover:underline text-sm">{job.website_url}</a>}
+                  {job.industry_category && <span className="text-xs bg-pink-50 text-pink-500 rounded px-2 py-1 ml-0 md:ml-2">{job.industry_category}</span>}
+                  {job.phase && <span className="text-xs bg-pink-100 text-pink-600 rounded px-2 py-1 ml-0 md:ml-2">{job.phase}</span>}
+                </div>
+                <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-600">
+                  <span className="flex items-center gap-1"><i className="fas fa-dollar-sign text-pink-400"></i> Lương: {job.min_monthly_salary && job.max_monthly_salary ? `$${job.min_monthly_salary} - $${job.max_monthly_salary}` : 'Thỏa thuận'}</span>
+                  <span className="flex items-center gap-1"><i className="fas fa-map-marker-alt text-pink-400"></i> {extractCity(job.work_location)}</span>
+                  <span className="flex items-center gap-1"><i className="fas fa-globe-asia text-pink-400"></i> Hỗ trợ Visa: {job.visa_support ? 'Có' : 'Không'}</span>
+                </div>
+              </div>
+              {/* Badge ưu tiên & nút xem chi tiết */}
+              <div className="flex flex-col items-end gap-2 mt-4 md:mt-0 md:ml-6 w-full md:w-auto">
+                {job.job_rank && <span className="px-3 py-1 bg-pink-100 text-pink-600 rounded-full text-xs font-semibold shadow-sm mb-2">{job.job_rank.replace(/_/g, ' ')}</span>}
+                <button
+                  onClick={() => navigate(`/tables/job-detail/${job.id}`)}
+                  className="text-pink-600 hover:text-pink-800 font-semibold flex items-center gap-1 text-sm mt-2 md:mt-0 focus:outline-none"
+                  type="button"
+                >
+                  Xem chi tiết <i className="fas fa-arrow-right"></i>
+                </button>
+              </div>
             </div>
-            {/* Expand chi tiết với hiệu ứng mượt */}
-            <div
-              className={`transition-all duration-350 ease-in-out overflow-hidden ${expandedJobId === job.id ? 'max-h-[2000px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-2'} ${animatingJobId === job.id ? '' : ''}`}
-            >
-              {expandedJobId === job.id && (
-                <div className="mt-6 border-t pt-6 grid grid-cols-1 md:grid-cols-3 gap-10">
-                  {/* Cột trái: Description + Requirements */}
-                  <div className="md:col-span-2">
-                    <h2 className="font-bold text-2xl text-indigo-800 mb-3">Description</h2>
-                    <div className="text-lg text-gray-800 whitespace-pre-line">
-                      {job.job_summary || 'No description.'}
-                    </div>
-                    {job.requirements && (
-                      <div className="mt-6">
-                        <h3 className="font-bold text-xl text-indigo-700 mb-2">Requirements & Skills</h3>
-                        <div className="text-lg text-gray-800 whitespace-pre-line">
-                          {job.requirements}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {/* Cột phải: Financial + Details + Apply */}
-                  <div className="space-y-6">
-                    {/* Financial Details Card */}
-                    <div className="border-2 border-blue-200 bg-white rounded-2xl shadow-lg p-6 mb-3">
-                      <h2 className="font-bold text-xl text-blue-700 mb-3">Financial Details</h2>
-                      <div className="text-lg text-gray-800 space-y-2">
-                        <div className="flex items-center gap-2 py-1"><span className="text-blue-700 font-semibold">Salary:</span> <span className="text-gray-900 font-bold">{job.min_monthly_salary && job.max_monthly_salary ? `${job.min_monthly_salary} - ${job.max_monthly_salary}` : 'N/A'}</span></div>
-                        <div className="flex items-center gap-2 py-1"><span className="text-blue-700 font-semibold">Commission Rate:</span> <span className="text-gray-900 font-bold">{job.bonus ?? 'N/A'}</span></div>
-                        <div className="flex items-center gap-2 py-1"><span className="text-blue-700 font-semibold">Contract Rate:</span> <span className="text-gray-900 font-bold">{job.allowance ?? 'N/A'}</span></div>
-                        <div className="flex items-center gap-2 py-1"><span className="text-blue-700 font-semibold">Warranty Period:</span> <span className="text-gray-900 font-bold">{job.probation_period ?? 'N/A'}</span></div>
-                      </div>
-                    </div>
-                    {/* Details Card */}
-                    <div className="border-2 border-blue-100 bg-white rounded-2xl shadow p-6 mb-3">
-                      <div className="flex items-center mb-3">
-                        <span className="text-blue-500 mr-2"><svg xmlns='http://www.w3.org/2000/svg' className='inline h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z' /></svg></span>
-                        <h2 className="font-bold text-lg text-blue-700">Details</h2>
-                      </div>
-                      <div className="text-base text-gray-800 space-y-2">
-                        <div className="flex justify-between items-center"><span className="font-semibold">Category:</span><span>{job.industry_category ?? 'N/A'}</span></div>
-                        <div className="flex justify-between items-center"><span className="font-semibold">Job Type:</span><span>{job.job_category ?? 'N/A'}</span></div>
-                        <div className="flex justify-between items-center"><span className="font-semibold">Location:</span><span>{job.work_location ?? 'N/A'}</span></div>
-                        <div className="flex justify-between items-center"><span className="font-semibold">Client:</span><span>{getClientName(job.clients) ?? 'N/A'}</span></div>
-                        {getClientWebsite(job.clients) && (
-                          <div className="flex justify-between items-center"><span className="font-semibold">Client Website:</span><a href={getClientWebsite(job.clients)} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-semibold underline">{getClientWebsite(job.clients)}</a></div>
-                        )}
-                      </div>
-                    </div>
-                    {/* Timestamps Card */}
-                    <div className="border-2 border-yellow-100 bg-white rounded-2xl shadow p-6 mb-3">
-                      <div className="flex items-center mb-3">
-                        <span className="text-yellow-500 mr-2"><svg xmlns='http://www.w3.org/2000/svg' className='inline h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15.232 5.232l3.536 3.536M9 13h6m2 2a2 2 0 11-4 0 2 2 0 014 0zm-6 2a2 2 0 11-4 0 2 2 0 014 0zm-2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0z' /></svg></span>
-                        <h2 className="font-bold text-lg text-yellow-700">Timestamps</h2>
-                      </div>
-                      <div className="text-base text-gray-800 space-y-2">
-                        <div className="flex justify-between items-center"><span className="font-semibold">Created:</span><span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : 'N/A'}</span></div>
-                        <div className="flex justify-between items-center"><span className="font-semibold">Last Updated:</span><span>{job.updated_at ? new Date(job.updated_at).toLocaleDateString() : (job.created_at ? new Date(job.created_at).toLocaleDateString() : 'N/A')}</span></div>
-                      </div>
-                    </div>
-                    {/* Nút Apply */}
-                    <div>
-                      <button
-                        onClick={() => handleApplyClick(job)}
-                        className="w-full rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-4 text-lg shadow-xl transition-transform duration-200 hover:scale-110"
-                      >
-                        Apply for this job
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-                </div>
-              </div>
-            ))}
-          </div>
-          {hasMore && !loading && (
-            <div className="text-center mt-4">
+          ))}
+        </div>
+      </div>
+      {hasMore && !loading && (
+        <div className="text-center mt-4">
           <button onClick={loadMoreJobs} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled={loading}>
             {loading ? 'Loading...' : 'Load More'}
-              </button>
-            </div>
+          </button>
+        </div>
       )}
       {loading && jobs.length > 0 && page > 1 && (
         <p className="text-center mt-4 text-gray-600">Loading more jobs...</p>

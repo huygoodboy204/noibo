@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useMemo } from 'react';
 import { supabase } from '../supabaseClient'; // Assuming supabaseClient.ts is in src/
-import { Candidate, Client, Job } from '../types'; // Import Client and Job
+import { Candidate, Client, Job } from '../types/index'; // Import Client and Job
 
 // Define the list of table names managed by this context
 export type TableName = 'candidates' | 'clients' | 'jobs';

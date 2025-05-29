@@ -1,0 +1,7 @@
+version: '3'
+services:
+  web:
+    image: tdgames/noibo:latest
+    ports:
+      - "80:80"
+    restart: always 

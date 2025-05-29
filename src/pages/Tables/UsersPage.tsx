@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import EditUserModal from './EditUserModal';
+import './UsersPage.css';
 // import { User } from '../../types'; // Will use local UserDisplay
 // import { useSupabaseQuery } from '../../hooks/useSupabaseQuery'; // Removed
 
@@ -32,7 +33,7 @@ interface UserDisplay {
 const UsersPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { session } = useAuth(); // session for auth in fetch
+  const { session } = useAuth();
 
   // State for data, loading, error, pagination
   const [users, setUsers] = useState<UserDisplay[]>([]);
@@ -54,6 +55,109 @@ const UsersPage: React.FC = () => {
   // UI specific state
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<UserDisplay | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+
+  // Cleanup function
+  const cleanup = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (mountTimerId.current) {
+      clearTimeout(mountTimerId.current);
+      mountTimerId.current = null;
+    }
+    if (visibilityDebounceRef.current) {
+      clearTimeout(visibilityDebounceRef.current);
+      visibilityDebounceRef.current = null;
+    }
+    isMounted.current = false;
+  };
+
+  // Handle visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && location.pathname === '/tables/users') {
+        console.log('[UsersPage] Page/tab became visible');
+        
+        if (visibilityDebounceRef.current) {
+          clearTimeout(visibilityDebounceRef.current);
+        }
+        
+        visibilityDebounceRef.current = window.setTimeout(() => {
+          if (isMounted.current) {
+            fetchUsers(true);
+          }
+          visibilityDebounceRef.current = null;
+        }, 500);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityDebounceRef.current) {
+        clearTimeout(visibilityDebounceRef.current);
+      }
+    };
+  }, [location.pathname]);
+
+  // Handle navigation
+  useEffect(() => {
+    if (isMounted.current && location.pathname === '/tables/users') {
+      if (prevPathname.current && prevPathname.current !== location.pathname) {
+        console.log(`[UsersPage] Navigated to users page. Previous path: ${prevPathname.current}`);
+        fetchUsers(true);
+      }
+      prevPathname.current = location.pathname;
+    }
+  }, [location.pathname]);
+
+  // Initial mount
+  useEffect(() => {
+    console.log('[UsersPage] Component mounted');
+    isMounted.current = true;
+    prevPathname.current = location.pathname;
+    
+    setUsers([]);
+    setPage(1);
+    setHasMore(true);
+    setError(null);
+    setTotalCount(0);
+    isCurrentlyFetching.current = false;
+    lastSuccessfulFetchRef.current = 0;
+
+    if (mountTimerId.current) clearTimeout(mountTimerId.current);
+    mountTimerId.current = setTimeout(() => {
+      if (isMounted.current) {
+        fetchUsers(true);
+      }
+    }, 100);
+
+    return cleanup;
+  }, [location.pathname]);
+
+  // Handle page change
+  useEffect(() => {
+    if (page > 1 && isMounted.current) {
+      fetchUsers(false, page);
+    }
+  }, [page]);
+
+  // Handle online/offline
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[UsersPage] Browser is online, refreshing data');
+      if (isMounted.current) {
+        fetchUsers(true);
+      }
+    };
+    
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
 
   const fetchTotalUsersCount = useCallback(async (signal?: AbortSignal) => {
     console.log('[UsersPage] Fetching total users count...');
@@ -177,65 +281,6 @@ const UsersPage: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    isMounted.current = true; 
-    prevPathname.current = location.pathname; 
-    console.log(`[UsersPage] Mount/PathChange Effect: Path ${location.pathname}. Initializing.`);
-    setUsers([]); 
-    setPage(1);
-    setHasMore(true); 
-    setError(null); 
-    setTotalCount(0);
-    isCurrentlyFetching.current = false; 
-    lastSuccessfulFetchRef.current = 0;
-
-    if (mountTimerId.current) clearTimeout(mountTimerId.current);
-    mountTimerId.current = setTimeout(() => {
-      if (isMounted.current) {
-        console.log('[UsersPage] Mount timer: fetchUsers(true, 1)');
-        fetchUsers(true, 1); 
-      }
-    }, 50);
-
-    return () => { 
-        if(mountTimerId.current) clearTimeout(mountTimerId.current); 
-        isMounted.current = false; 
-        if (abortControllerRef.current) { abortControllerRef.current.abort('UsersPage unmounted/path changed'); abortControllerRef.current = null; } 
-        if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); 
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
-  useEffect(() => {
-    if (isMounted.current) {
-      if (page === 1 && lastSuccessfulFetchRef.current === 0) {
-      } else if (page > 1) {
-        console.log(`[UsersPage] Page changed to ${page}, fetching next page (load more).`);
-        fetchUsers(false, page);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
-
-  useEffect(() => { 
-    const handleVisibilityChange = () => { 
-        if (document.visibilityState === 'visible' && isMounted.current && location.pathname.includes('/tables/users')) { 
-            if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); 
-            visibilityDebounceRef.current = window.setTimeout(() => { 
-                if (isMounted.current) {
-                    console.log('[UsersPage] Visibility change: Resetting page to 1 and forcing fetch.');
-                    setPage(1);
-                    fetchUsers(true,1); 
-                }
-                visibilityDebounceRef.current = null; 
-            }, 300); 
-        }
-    }; 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => { document.removeEventListener('visibilitychange', handleVisibilityChange); if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
   const handleAddUser = () => navigate('/tables/users/new');
   const handleUpdateUser = (userId: string) => {
     const user = users.find(u => u.id === userId);
@@ -258,6 +303,53 @@ const UsersPage: React.FC = () => {
     setEditingUser(null);
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa user này?')) {
+      return;
+    }
+
+    try {
+      setDeletingUserId(userId);
+      
+      // Xóa user trong bảng users (RLS policy sẽ tự động xóa trong auth.users)
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Refresh user list after successful deletion
+      setUsers(users.filter(user => user.id !== userId));
+      setTotalCount(prev => prev - 1);
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Có lỗi xảy ra khi xóa user. Vui lòng thử lại.');
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
+  const handleInviteUser = async (email: string, full_name: string, role: string) => {
+    try {
+      const response = await fetch('https://dqnjtkbxtscjikalkajq.supabase.co/functions/v1/invite-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, full_name, role }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Lỗi không xác định');
+      }
+      alert('Mời người dùng thành công!');
+    } catch (error: any) {
+      alert(`Lỗi: ${error.message}`);
+    }
+  };
+
   const filteredUsers = users.filter(user => {
     const u = user as UserDisplay;
     return searchTerm === '' ||
@@ -268,58 +360,100 @@ const UsersPage: React.FC = () => {
   });
 
   if (loading && !users.length && page === 1) return <p>Loading users...</p>;
-  if (error) return ( <div className="container mx-auto p-4 text-center"> <p className="text-red-500">Error: {error}</p> <button onClick={refreshUsers} className="mt-4 ...">Try Again</button> </div> );
+  if (error) return (
+    <div className="container mx-auto p-4 text-center">
+      <p className="text-red-500">Error: {error}</p>
+      <button onClick={refreshUsers} className="mt-4 bg-sky-600 hover:bg-sky-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-150">
+        Thử lại
+      </button>
+    </div>
+  );
 
   return (
-    <div className="container mx-auto p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl md:text-4xl font-extrabold text-gray-800">User Management</h1>
-        <button onClick={handleAddUser} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg flex items-center gap-3 text-lg transition-all duration-200 hover:scale-105">
-          <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-            Add User
-          </button>
+    <main id="contentUsers" className="main-content-section flex-1 p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+        <h1 className="text-3xl font-bold text-slate-800">Quản lý Người dùng <span className="text-sky-600">({totalCount})</span></h1>
+        <button 
+          onClick={handleAddUser}
+          className="mt-3 sm:mt-0 bg-sky-600 hover:bg-sky-700 text-white font-medium py-2.5 px-5 rounded-lg flex items-center transition-colors duration-150"
+        >
+          <i className="fas fa-user-plus mr-2"></i> Thêm người dùng
+        </button>
       </div>
-      <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-8 overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
+        <table className="styled-table">
           <thead>
             <tr>
-              <th className="px-6 py-4 text-left text-sm font-bold text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-4 text-left text-sm font-bold text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="px-6 py-4 text-left text-sm font-bold text-gray-500 uppercase tracking-wider">Role</th>
-              <th className="px-6 py-4 text-left text-sm font-bold text-gray-500 uppercase tracking-wider">Joined At</th>
-              <th className="px-6 py-4 text-left text-sm font-bold text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-4 text-center text-sm font-bold text-gray-500 uppercase tracking-wider">Actions</th>
+              <th>Tên</th>
+              <th>Email</th>
+              <th>Vai trò</th>
+              <th>Lần đăng nhập cuối</th>
+              <th>Trạng thái</th>
+              <th>Hành động</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody>
             {filteredUsers.length === 0 && !loading ? (
-              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-lg">No users found.</td></tr>
+              <tr>
+                <td colSpan={6} className="text-center py-12 text-gray-400 text-lg">
+                  <div className="flex flex-col items-center justify-center">
+                    <i className="fas fa-users text-4xl mb-4 text-gray-300"></i>
+                    <p>Không tìm thấy người dùng nào.</p>
+                    <p className="text-sm text-gray-500 mt-2">Hãy thử tìm kiếm với từ khóa khác hoặc thêm người dùng mới.</p>
+                  </div>
+                </td>
+              </tr>
             ) : (
               filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-blue-50 transition-all duration-200">
-                  <td className="px-6 py-4 font-semibold text-gray-800 text-base">{user.full_name || 'N/A'}</td>
-                  <td className="px-6 py-4 text-gray-700 text-base">{user.email || 'N/A'}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-4 py-2 rounded-full text-sm font-bold ${user.role === 'Admin' ? 'bg-purple-100 text-purple-700' : user.role === 'HR' ? 'bg-green-100 text-green-700' : user.role === 'Manager' ? 'bg-blue-100 text-blue-700' : user.role === 'Headhunter' ? 'bg-yellow-100 text-yellow-700' : user.role === 'BD' ? 'bg-pink-100 text-pink-700' : 'bg-gray-100 text-gray-700'}`}>{user.role || 'N/A'}</span>
+                <tr key={user.id}>
+                  <td className="font-medium">{user.full_name || 'N/A'}</td>
+                  <td>{user.email || 'N/A'}</td>
+                  <td>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
+                      user.role === 'HR' ? 'bg-green-100 text-green-700' :
+                      user.role === 'Manager' ? 'bg-blue-100 text-blue-700' :
+                      user.role === 'Headhunter' ? 'bg-yellow-100 text-yellow-700' :
+                      user.role === 'BD' ? 'bg-pink-100 text-pink-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {user.role || 'N/A'}
+                    </span>
                   </td>
-                  <td className="px-6 py-4 text-gray-600 text-base">{user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-4 py-2 rounded-full text-sm font-bold ${user.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{user.is_active ? 'Active' : 'Inactive'}</span>
+                  <td>{user.updated_at ? new Date(user.updated_at).toLocaleDateString() : 'N/A'}</td>
+                  <td>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    }`}>
+                      {user.is_active ? 'Hoạt động' : 'Không hoạt động'}
+                    </span>
                   </td>
-                  <td className="px-6 py-4 text-center flex gap-3 justify-center">
-                    <button onClick={() => handleUpdateUser(user.id)} className="p-2.5 rounded-lg hover:bg-blue-100 text-blue-600 transition-all duration-200 hover:scale-110" title="Edit">
-                      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13h6m2 2a2 2 0 11-4 0 2 2 0 014 0zm-6 2a2 2 0 11-4 0 2 2 0 014 0zm-2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                  </button>
-                    <button className="p-2.5 rounded-lg hover:bg-red-100 text-red-600 transition-all duration-200 hover:scale-110" title="Delete">
-                      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+                  <td>
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => handleUpdateUser(user.id)}
+                        className="action-btn text-slate-600 hover:text-sky-600"
+                        title="Chỉnh sửa"
+                      >
+                        <i className="fas fa-edit"></i>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        disabled={deletingUserId === user.id}
+                        className="action-btn text-red-500 hover:text-red-600"
+                        title="Xóa"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
-            </div>
+      </div>
+
       {editingUser && (
         <EditUserModal
           user={{
@@ -333,7 +467,7 @@ const UsersPage: React.FC = () => {
           onSave={handleSaveEditUser}
         />
       )}
-    </div>
+    </main>
   );
 };
 

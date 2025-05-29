@@ -5,6 +5,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Candidate } from '../../types/index';
 import EditCandidateModal from './EditCandidateModal';
 
+// ENUM values from DB schema
+const CANDIDATE_PHASE_OPTIONS = ['New_Lead', 'Contacted', 'Screening', 'Qualified', 'Submitted_To_Client', 'Interview_Process', 'Offer_Stage', 'Placed', 'Archived_Not_Suitable', 'Archived_Not_Interested'];
+const CANDIDATE_RANK_OPTIONS = ['Hot', 'Warm', 'Cold', 'A_List', 'B_List'];
+const VISA_STATUS_OPTIONS = ['Citizen', 'Permanent_Resident', 'Work_Permit_Holder', 'Dependent_Pass_Holder', 'Student_Pass_Holder', 'Requires_Sponsorship', 'Not_Applicable'];
+
 // Test Supabase connection directly
 const testSupabaseConnection = async (signal?: AbortSignal) => {
   try {
@@ -36,6 +41,14 @@ const testSupabaseConnection = async (signal?: AbortSignal) => {
     return { status: 'error', text: error instanceof Error ? error.toString() : String(error) };
   }
 };
+
+// Định nghĩa type mở rộng cho candidate có owner
+interface CandidateWithOwner extends Candidate {
+  owner?: {
+    full_name?: string;
+    email?: string;
+  };
+}
 
 const CandidatesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -73,6 +86,13 @@ const CandidatesPage: React.FC = () => {
 
   // Check if we're coming from the Apply Job flow
   const { fromApply, jobId } = location.state || {};
+
+  // Filter state
+  const [filterOwner, setFilterOwner] = useState('');
+  const [filterEmploymentStatus, setFilterEmploymentStatus] = useState('');
+  const [filterExperiencedJob, setFilterExperiencedJob] = useState('');
+  const [minSalary, setMinSalary] = useState('');
+  const [maxSalary, setMaxSalary] = useState('');
 
   // Debugging function
   const debugSupabase = async () => {
@@ -183,13 +203,10 @@ const CandidatesPage: React.FC = () => {
   const directFetchCandidates = async (signal?: AbortSignal, page = 1, pageSize = PAGE_SIZE) => {
     try {
       console.log(`[CandidatesPage] Attempting direct fetch for candidates (page ${page})...`);
-      
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
-      
-      // Build the Supabase REST API URL with proper parameters
-      const url = `https://dqnjtkbxtscjikalkajq.supabase.co/rest/v1/candidates?select=id,name,date_of_birth,email,linkedin,phase,current_employment_status,cv_link,created_at&order=created_at.desc&offset=${from}&limit=${pageSize}`;
-      
+      // Lấy tất cả các trường cần thiết (hoặc dùng * nếu muốn lấy hết)
+      const url = `https://dqnjtkbxtscjikalkajq.supabase.co/rest/v1/candidates?select=*,owner:owner_id(full_name,email)&order=created_at.desc&offset=${from}&limit=${pageSize}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -199,21 +216,17 @@ const CandidatesPage: React.FC = () => {
         },
         signal: signal
       });
-      
       if (!response.ok) {
         throw new Error(`Direct fetch failed with status: ${response.status}`);
       }
-      
       const data = await response.json();
       console.log(`[CandidatesPage] Direct fetch success, got ${data.length} candidates`);
-      
       return { data, error: null };
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         console.log('[CandidatesPage] Direct fetch aborted');
         return { data: null, error: new Error('Request aborted') };
       }
-      
       console.error('[CandidatesPage] Direct fetch error:', err);
       return { data: null, error: err instanceof Error ? err : new Error(String(err)) };
     }
@@ -581,6 +594,75 @@ const CandidatesPage: React.FC = () => {
     }
   };
 
+  // Hàm clear filter
+  const handleClearFilters = () => {
+    setFilterOwner('');
+    setFilterEmploymentStatus('');
+    setFilterExperiencedJob('');
+    setMinSalary('');
+    setMaxSalary('');
+  };
+
+  // Hàm apply filter (nếu có logic filter cũ thì giữ nguyên, nếu không thì chỉ set lại state để re-render)
+  const handleApplyFilters = () => {
+    // Nếu filter thực sự fetch lại từ server thì gọi fetchCandidates();
+    // Nếu chỉ filter trên client thì không cần làm gì, vì filteredCandidates sẽ tự động cập nhật
+  };
+
+  // Hàm xóa ứng viên (gọi API Supabase trước khi xoá ở UI)
+  const handleDeleteCandidate = async (candidateId: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa ứng viên này?')) return;
+    try {
+      const { error } = await supabase
+        .from('candidates')
+        .delete()
+        .eq('id', candidateId);
+      if (error) {
+        alert('Xoá ứng viên thất bại: ' + error.message);
+        return;
+      }
+      setCandidates(prev => prev.filter(c => c.id !== candidateId));
+    } catch (err: any) {
+      alert('Có lỗi xảy ra khi xoá ứng viên: ' + (err.message || err));
+    }
+  };
+
+  // Filter candidates theo các filter đã chọn (chỉ dùng property có thật trong Candidate)
+  const filteredCandidates = (candidates as CandidateWithOwner[]).filter(candidate => {
+    // Nếu đang ở chế độ apply job, chỉ lấy candidate do user hiện tại tạo
+    if (fromApply && jobId && candidate.owner_id !== session?.user?.id) return false;
+    // Lọc lương
+    const salary = candidate.expected_monthly_salary || 0;
+    const min = minSalary ? parseFloat(minSalary) : null;
+    const max = maxSalary ? parseFloat(maxSalary) : null;
+    const salaryOk = (!min || salary >= min) && (!max || salary <= max);
+    // Lọc theo owner name/email
+    const ownerName = (candidate.owner && candidate.owner.full_name) ? candidate.owner.full_name : '';
+    const ownerEmail = (candidate.owner && candidate.owner.email) ? candidate.owner.email : '';
+    const ownerOk = !filterOwner || ownerName.toLowerCase().includes(filterOwner.toLowerCase()) || ownerEmail.toLowerCase().includes(filterOwner.toLowerCase());
+    // Lọc experienced_job: chỉ cần 1 mục trong list chứa từ khoá
+    let experiencedJobOk = true;
+    if (filterExperiencedJob) {
+      let jobs: string[] = [];
+      if (candidate.experienced_job) {
+        try {
+          const arr = JSON.parse(candidate.experienced_job);
+          if (Array.isArray(arr)) jobs = arr.map(j => String(j));
+          else jobs = [String(candidate.experienced_job)];
+        } catch {
+          jobs = [String(candidate.experienced_job)];
+        }
+      }
+      experiencedJobOk = jobs.some(j => j.toLowerCase().includes(filterExperiencedJob.toLowerCase()));
+    }
+    return (
+      ownerOk &&
+      (!filterEmploymentStatus || (candidate.current_employment_status || '').toLowerCase().includes(filterEmploymentStatus.toLowerCase())) &&
+      experiencedJobOk &&
+      salaryOk
+    );
+  });
+
   if (loading && !candidates.length) { 
     return <p>Loading candidates...</p>;
   }
@@ -600,92 +682,126 @@ const CandidatesPage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">
-          {fromApply ? 'Select Candidate to Apply' : `Candidates${totalCount > 0 ? ` (${candidates.length}/${totalCount})` : ''}`}
-        </h1>
-        <div>
-          <button 
-            onClick={handleRefresh} 
-            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded mr-2"
-            disabled={loading}
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
+    <main id="contentCandidates" className="main-content-section flex-1 p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+        <div className="flex items-center gap-4">
+          <h1 className="text-3xl font-bold text-slate-800">Danh sách Ứng viên <span className="text-sky-600">({totalCount})</span></h1>
+          {fromApply && jobId && (
+            <div className="bg-pink-50 text-pink-700 px-4 py-2 rounded-full text-sm font-medium border border-pink-100">
+              <i className="fas fa-paper-plane mr-2"></i>
+              Đang chọn ứng viên cho job
+            </div>
+          )}
+        </div>
+        <button
+          onClick={handleAddCandidate}
+          className="mt-3 sm:mt-0 bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 shadow-lg transition-colors duration-150"
+        >
+          <i className="fas fa-user-plus"></i> Thêm ứng viên
+        </button>
+      </div>
+      <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Người sở hữu (Tên hoặc Email)</label>
+            <input className="filter-select w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-sky-400" value={filterOwner} onChange={e => setFilterOwner(e.target.value)} placeholder="Tên hoặc email người sở hữu" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Tình trạng công việc hiện tại</label>
+            <input className="filter-select w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-sky-400" value={filterEmploymentStatus} onChange={e => setFilterEmploymentStatus(e.target.value)} placeholder="Nhập tình trạng công việc" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Kinh nghiệm công việc</label>
+            <input className="filter-select w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-sky-400" value={filterExperiencedJob} onChange={e => setFilterExperiencedJob(e.target.value)} placeholder="Nhập từ khoá kinh nghiệm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Lương mong muốn (từ)</label>
+            <input className="filter-select w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-sky-400" type="number" value={minSalary} onChange={e => setMinSalary(e.target.value)} placeholder="Tối thiểu" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Lương mong muốn (đến)</label>
+            <input className="filter-select w-full rounded-lg border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-sky-400" type="number" value={maxSalary} onChange={e => setMaxSalary(e.target.value)} placeholder="Tối đa" />
+          </div>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-2 justify-end">
+          <button className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg transition-colors duration-150" onClick={handleClearFilters}>
+            <i className="fas fa-times-circle"></i> Xóa bộ lọc
           </button>
-          <button 
-            onClick={handleAddCandidate}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Add Candidate
+          <button className="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-150" onClick={handleApplyFilters}>
+            <i className="fas fa-filter"></i> Áp dụng
           </button>
         </div>
       </div>
-      
-      {candidates.length === 0 && !loading ? (
-        <div className="text-center p-4">
-          <p>No candidates found.</p>
-          <p className="text-sm text-gray-500">Click "Add Candidate" to get started or "Refresh" to try loading again.</p>
-        </div>
-      ) : (
-        <>
-          <ul className="space-y-3">
-            {candidates.map((candidate) => (
-              <li key={candidate.id} className="p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-xl font-semibold text-blue-600 hover:text-blue-800 cursor-pointer" onClick={() => navigate(`/tables/candidates/view/${candidate.id}`)}>{candidate.name}</h2>
-                    {candidate.current_employment_status && <p className="text-md text-gray-700">{candidate.current_employment_status}</p>}
-                    {candidate.email && <p className="text-sm text-gray-600">Email: {candidate.email}</p>}
-                    {candidate.phase && <p className="text-sm font-medium"><span className={`px-2 py-1 text-xs rounded-full ${candidate.phase === 'New_Lead' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{String(candidate.phase).replace(/_/g, ' ')}</span></p>}
-                  </div>
-                  <div className="flex gap-2">
-                    {fromApply ? (
-                      <button 
-                        onClick={() => handleApplyWithCandidate(candidate.id)}
-                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded text-sm self-start"
-                      >
-                        Apply with this Candidate
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={() => handleUpdateCandidate(candidate.id)}
-                        className="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm self-start"
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+        {filteredCandidates.map(candidate => (
+          <div key={candidate.id} className="bg-white rounded-2xl shadow-lg p-6 border border-slate-100 hover:shadow-xl transition-shadow duration-200">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">{candidate.name}</h3>
+                <p className="text-slate-500">{candidate.email}</p>
+              </div>
+              {fromApply && jobId ? (
+                <button
+                  onClick={() => handleApplyWithCandidate(candidate.id)}
+                  disabled={loading}
+                  className="bg-gradient-to-r from-pink-500 to-pink-400 hover:from-pink-600 hover:to-pink-500 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <i className="fas fa-spinner fa-spin"></i>
+                  ) : (
+                    <>
+                      <i className="fas fa-paper-plane"></i>
+                      <span>Ứng tuyển</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleUpdateCandidate(candidate.id)}
+                    className="text-sky-600 hover:text-sky-700"
+                  >
+                    <i className="fas fa-edit"></i>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCandidate(candidate.id)}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <i className="fas fa-trash"></i>
+                  </button>
                 </div>
-                {candidate.linkedin && <p className="text-sm text-gray-500 mt-1">LinkedIn: <a href={candidate.linkedin} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{candidate.linkedin}</a></p>}
-                {candidate.cv_link && <p className="text-sm text-gray-500 mt-1">CV: <a href={candidate.cv_link} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">{candidate.cv_link}</a></p>}
-                {candidate.date_of_birth && <p className="text-sm text-gray-500">Date of Birth: {candidate.date_of_birth}</p>}
-              </li>
-            ))}
-          </ul>
-          
-          {hasMore && !loading && (
-            <div className="text-center mt-4">
-              <button 
-                onClick={loadMoreCandidates}
-                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-              >
-                Load More
-              </button>
+              )}
             </div>
-          )}
-        </>
-      )}
-      {loading && candidates.length > 0 && <p className="text-center mt-4 text-gray-600">Updating candidates list...</p>}
+            <div className="space-y-2 text-sm mb-4 flex-grow">
+              <p className="text-slate-600 flex items-center gap-2"><i className="fas fa-envelope w-4 text-slate-400"></i>{candidate.email}</p>
+              <p className="text-slate-600 flex items-center gap-2"><i className="fas fa-graduation-cap w-4 text-slate-400"></i>{candidate.highest_education || ''}</p>
+              <p className="text-slate-600 flex items-center gap-2"><i className="fas fa-briefcase w-4 text-slate-400"></i>{(() => {
+                if (!candidate.experienced_job) return '';
+                try {
+                  const arr = JSON.parse(candidate.experienced_job);
+                  if (Array.isArray(arr)) return arr.join(', ');
+                  return candidate.experienced_job;
+                } catch {
+                  return candidate.experienced_job;
+                }
+              })()}</p>
+              {candidate.linkedin && <p className="text-slate-600 flex items-center gap-2"><i className="fab fa-linkedin w-4 text-slate-400"></i><a href={candidate.linkedin} className="hover:underline">LinkedIn</a></p>}
+              {candidate.cv_link && <p className="text-slate-600 flex items-center gap-2"><i className="fas fa-file-alt w-4 text-slate-400"></i><a href={candidate.cv_link} className="hover:underline">Xem CV</a></p>}
+            </div>
+            <div className="pt-4 border-t border-slate-200 flex justify-between items-center mt-auto">
+              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold shadow-sm">{candidate.phase}</span>
+            </div>
+          </div>
+        ))}
+      </div>
       {editingCandidate && (
-        (console.log('[DEBUG] Render EditCandidateModal', editingCandidate),
         <EditCandidateModal
-          candidate={editingCandidate}
+          candidate={editingCandidate as any}
           onClose={handleCloseEditModal}
-          onSave={handleSaveEditCandidate}
-        />)
+          onSave={handleSaveEditCandidate as any}
+        />
       )}
-    </div>
+    </main>
   );
 };
 

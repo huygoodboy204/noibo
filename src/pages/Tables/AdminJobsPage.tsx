@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
-import { Job, ClientOption, HrContactOption, JobPhase, JobRank, EmploymentType } from '../../types';
+import { Job, ClientOption, HrContactOption, JobPhase, JobRank, EmploymentType } from '../../types/index';
 
 // Constants for fetching, mirroring JobsPage
 const PAGE_SIZE = 20;
@@ -140,7 +140,7 @@ const getClientWebsite = (clients: ClientInfoAdmin | ClientInfoAdmin[] | null | 
 const AdminJobsPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, session } = useAuth();
+  const { user, session, isAuthenticated, userRole, loading: authLoading } = useAuth();
   const searchDebounceRef = useRef<number | null>(null);
 
   // State for fetched admin jobs list
@@ -162,26 +162,8 @@ const AdminJobsPage: React.FC = () => {
 
   // Existing state from AdminJobsPage (modal, forms, filters etc.)
   const [filteredJobs, setFilteredJobs] = useState<JobDisplayAdmin[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [clientsForForm, setClientsForForm] = useState<ClientOption[]>([]);
-  const [hrContactsForForm, setHrContactsForForm] = useState<HrContactOption[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobDisplayAdmin | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [newJob, setNewJob] = useState<NewJobForm>({
-    position_title: '',
-    client_id: '',
-    hr_contact_id: '',
-    phase: 'Open',
-    job_rank: 'Medium_Priority',
-    min_monthly_salary: null,
-    max_monthly_salary: null,
-    job_summary: null,
-    requirements: null,
-    work_location: null,
-    industry_category: null,
-    job_category: null
-  });
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
     category: '',
@@ -205,8 +187,9 @@ const AdminJobsPage: React.FC = () => {
     console.log('[AdminJobsPage] Fetching total admin jobs count...');
     if (!isMounted.current || signal?.aborted) return 0;
     let countVal = 0;
+    const accessToken = session?.access_token || '';
     try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/jobs?select=count`, { method: 'GET', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${session?.access_token || ''}`, 'Content-Type': 'application/json', 'Prefer': 'count=exact' }, signal });
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/jobs?select=count`, { method: 'GET', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Prefer': 'count=exact' }, signal });
       if (response.ok) {
         const countData = await response.json();
         countVal = Array.isArray(countData) && countData.length > 0 && typeof countData[0].count === 'number' ? countData[0].count : (Array.isArray(countData) && countData.length > 0 && typeof countData[0].count === 'string' ? parseInt(countData[0].count, 10) : 0);
@@ -230,8 +213,19 @@ const AdminJobsPage: React.FC = () => {
     let url = `${SUPABASE_URL}/rest/v1/jobs?select=${encodeURIComponent(ADMIN_JOBS_SELECT_QUERY)}`;
     url += `&order=${ADMIN_JOBS_ORDER_BY_COLUMN}.${ADMIN_JOBS_ORDER_BY_ASCENDING ? 'asc' : 'desc'}`;
     url += `&offset=${from}&limit=${PAGE_SIZE}`;
+    const accessToken = session?.access_token || '';
+    const timeoutDuration = 10000;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const id = setTimeout(() => {
+        clearTimeout(id);
+        reject(new Error(`Query timed out after ${timeoutDuration}ms`));
+      }, timeoutDuration);
+    });
     try {
-      const response = await fetch(url, { method: 'GET', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${session?.access_token || ''}`, 'Content-Type': 'application/json' }, signal });
+      const response = await Promise.race([
+        fetch(url, { method: 'GET', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, signal }),
+        timeoutPromise
+      ]);
       if (!response.ok) { const errorBody = await response.text(); throw new Error(`Direct fetch for admin jobs failed: ${response.status} - ${errorBody}`); }
       const fetchedData = await response.json();
       return { data: fetchedData as JobDisplayAdmin[], error: null };
@@ -302,8 +296,7 @@ const AdminJobsPage: React.FC = () => {
       isCurrentlyFetchingAdminJobs.current = false;
       if (isMounted.current) setLoadingAdminJobs(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageAdminJobs, totalAdminJobsCount, session?.access_token]);
+  }, [pageAdminJobs, totalAdminJobsCount, session?.access_token, directFetchAdminJobs]);
 
   const loadMoreAdminJobs = useCallback(() => {
     if (!loadingAdminJobs && hasMoreAdminJobs && !isCurrentlyFetchingAdminJobs.current) {
@@ -312,44 +305,24 @@ const AdminJobsPage: React.FC = () => {
   }, [loadingAdminJobs, hasMoreAdminJobs]);
 
   const refreshAdminJobs = useCallback(() => {
-    console.log('[AdminJobsPage] Refresh admin jobs...');
+    setPageAdminJobs(1);
     fetchAdminJobs(true, 1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // fetchAdminJobs is in closure, will use the version from initial render or when session changes if fetchAdminJobs itself is re-memoized
+  }, [fetchAdminJobs]);
 
-  useEffect(() => { // Mount/unmount for admin jobs list
-    isMounted.current = true; 
-    prevPathnameAdminJobs.current = location.pathname; 
-    console.log(`[AdminJobsPage] Component mounted or path changed: ${location.pathname}. Initializing job list.`);
-    setAdminJobsList([]); setPageAdminJobs(1); setHasMoreAdminJobs(true); setErrorAdminJobs(null); setTotalAdminJobsCount(0);
-    isCurrentlyFetchingAdminJobs.current = false; lastSuccessfulFetchAdminJobsRef.current = 0;
-    if (mountTimerAdminJobsRef.current) clearTimeout(mountTimerAdminJobsRef.current);
-    mountTimerAdminJobsRef.current = setTimeout(() => { 
-        if (isMounted.current) { 
-            console.log('[AdminJobsPage] Mount useEffect: Calling fetchAdminJobs(true, 1)');
-            fetchAdminJobs(true, 1); 
-        }
-    }, 50);
-    return () => { 
-        if(mountTimerAdminJobsRef.current) clearTimeout(mountTimerAdminJobsRef.current); 
-        isMounted.current = false; 
-        if (abortControllerAdminJobsRef.current) { abortControllerAdminJobsRef.current.abort('AdminJobsPage unmounted/path changed'); abortControllerAdminJobsRef.current = null; } 
-        if (visibilityDebounceAdminJobsRef.current !== null) window.clearTimeout(visibilityDebounceAdminJobsRef.current); 
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Only location.pathname. fetchAdminJobs will be called from closure.
-
-  useEffect(() => { // Page change for admin jobs list
-    if (pageAdminJobs > 1 && isMounted.current) {
-        console.log(`[AdminJobsPage] Page changed to ${pageAdminJobs}, fetching data.`);
-        fetchAdminJobs(false, pageAdminJobs);
+  useEffect(() => {
+    if (hasMoreAdminJobs) {
+      fetchAdminJobs();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageAdminJobs]); // Only pageAdminJobs. fetchAdminJobs from closure.
+  }, [pageAdminJobs, fetchAdminJobs, hasMoreAdminJobs]);
 
-  useEffect(() => { // Visibility change for admin jobs list
-    const handleVisibilityChange = () => { 
-        if (document.visibilityState === 'visible' && isMounted.current && location.pathname.includes('/admin/jobs')) { 
+  useEffect(() => {
+    if (session?.access_token) {
+      fetchTotalAdminJobsCount();
+    }
+  }, [session?.access_token, fetchTotalAdminJobsCount]);
+
+  useEffect(() => {
+    if (location.pathname.includes('/admin/jobs')) {
             if (visibilityDebounceAdminJobsRef.current !== null) window.clearTimeout(visibilityDebounceAdminJobsRef.current); 
             visibilityDebounceAdminJobsRef.current = window.setTimeout(() => { 
                 if (isMounted.current) {
@@ -359,126 +332,84 @@ const AdminJobsPage: React.FC = () => {
                 visibilityDebounceAdminJobsRef.current = null; 
             }, 300); 
         }
-    }; 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => { document.removeEventListener('visibilitychange', handleVisibilityChange); if (visibilityDebounceAdminJobsRef.current !== null) window.clearTimeout(visibilityDebounceAdminJobsRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Only location.pathname. fetchAdminJobs from closure.
+  }, [location.pathname, fetchAdminJobs]);
 
-  // useEffect to update filterOptions
   useEffect(() => {
-    if (adminJobsList.length > 0) {
-      const uniqueCategories = [...new Set(adminJobsList.map(job => job.industry_category).filter(Boolean) as string[])];
-      const uniqueLocations = [...new Set(adminJobsList.map(job => job.work_location).filter(Boolean) as string[])];
-      const uniqueClients = [...new Set(adminJobsList.map(job => getRelationalField(job.clients, 'client_name')).filter(Boolean) as string[])];
-      const uniqueRankings = [...new Set(adminJobsList.map(job => job.job_rank).filter(Boolean) as JobRank[])];
-      const uniquePhases = [...new Set(adminJobsList.map(job => job.phase).filter(Boolean) as JobPhase[])];
-      setFilterOptions(prev => ({
-        ...prev,
-        categories: uniqueCategories.length > 0 ? uniqueCategories : prev.categories,
-        locations: uniqueLocations.length > 0 ? uniqueLocations : prev.locations,
-        clients: uniqueClients.length > 0 ? uniqueClients : prev.clients,
-        rankings: uniqueRankings.length > 0 ? uniqueRankings : prev.rankings,
-        phases: uniquePhases.length > 0 ? uniquePhases : prev.phases
-      }));
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
     }
-  }, [adminJobsList]);
+    };
+  }, []);
 
-  // useEffect to filter jobs
   useEffect(() => {
-    if (adminJobsList && adminJobsList.length > 0) { 
-      let result = [...adminJobsList];
-      if (searchQuery.trim() || filters.category || filters.location || filters.client || filters.ranking || filters.phase) {
-        if (searchQuery.trim()) {
-          const query = searchQuery.toLowerCase().trim();
-          result = result.filter(job => {
-            const clientName = getRelationalField(job.clients, 'client_name');
-            return (
-            job.position_title?.toLowerCase().includes(query) || 
-              clientName?.toLowerCase().includes(query) || 
-            job.industry_category?.toLowerCase().includes(query) ||
-            job.work_location?.toLowerCase().includes(query)
-          );
-          });
+    let currentJobs = [...adminJobsList];
+    if (searchQuery) {
+      currentJobs = currentJobs.filter(job => 
+        job.position_title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        getRelationalField(job.clients, 'client_name')?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    if (filters.category) {
+      currentJobs = currentJobs.filter(job => job.industry_category === filters.category);
         }
-        if (filters.category) result = result.filter(job => job.industry_category === filters.category);
-        if (filters.location) result = result.filter(job => job.work_location === filters.location);
-        if (filters.client) result = result.filter(job => getRelationalField(job.clients, 'client_name') === filters.client);
-        if (filters.ranking) result = result.filter(job => job.job_rank === filters.ranking);
-        if (filters.phase) result = result.filter(job => job.phase === filters.phase);
-        }
-      setFilteredJobs(result);
-    } else {
-      setFilteredJobs([]);
+    if (filters.jobType) {
+      currentJobs = currentJobs.filter(job => job.job_type === filters.jobType);
     }
-  }, [adminJobsList, filters, searchQuery]);
-
-  // Fetch clients for dropdown (keep as is - simple Supabase client fetch)
-  const fetchClientsForForm = async () => {
-    try {
-      const { data, error } = await supabase.from('clients').select('id, client_name').order('client_name');
-      if (error) throw error;
-      console.log('Fetched clients:', data); // Debug log
-      setClientsForForm(data || []);
-    } catch (err) {
-      console.error('Error fetching clients for form:', err);
+    if (filters.location) {
+      currentJobs = currentJobs.filter(job => job.work_location === filters.location);
     }
-  };
-  
-  // Fetch HR contacts for the selected client (keep as is)
-  const fetchHrContactsForForm = async (clientId: string) => {
-    if (!clientId) {
-      setHrContactsForForm([]);
-      return;
-    }
-    
-    try {
-      const { data, error } = await supabase
-        .from('hr_contacts')
-        .select('id, name, client_id')
-        .eq('client_id', clientId)
-        .order('name');
-        
-      if (error) throw error;
-      console.log('Fetched hr_contacts:', data); // Debug log
-      setHrContactsForForm(data || []);
-    } catch (err) {
-      console.error('Error fetching hr contacts for form:', err);
-    }
-  };
-  
-  // Handle client change in form
-  const handleClientChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const clientId = e.target.value;
-    setNewJob(prev => ({ ...prev, client_id: clientId, hr_contact_id: '' }));
-    fetchHrContactsForForm(clientId);
-  };
-
-  const handleAddAdminJob = () => {
-    setShowAddModal(true);
-    fetchClientsForForm();
-  };
-
-  const handleUpdateAdminJob = (jobId: string) => {
-    alert(`Update job function (ID: ${jobId}) will be added later!`);
-  };
-
-  // Handle input changes in the form
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setNewJob(prev => ({ ...prev, [name]: value }));
-    
-    // Clear error for this field when user edits it
-    if (formErrors[name]) {
-      setFormErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
+    if (filters.client) {
+      currentJobs = currentJobs.filter(job => {
+        const clientName = getRelationalField(job.clients, 'client_name');
+        return clientName === filters.client;
       });
     }
+    if (filters.ranking) {
+      currentJobs = currentJobs.filter(job => job.job_rank === filters.ranking);
+    }
+    if (filters.phase) {
+      currentJobs = currentJobs.filter(job => job.phase === filters.phase);
+        }
+    setFilteredJobs(currentJobs);
+  }, [adminJobsList, filters, searchQuery]);
+
+  const handleFilterChange = (filterName: keyof FilterOptions, value: string) => {
+    setFilters(prev => ({ ...prev, [filterName]: value }));
   };
 
-  // Handle search with debounce
+  const handleJobClick = (job: JobDisplayAdmin) => {
+    setSelectedJob(prevSelectedJob => 
+      prevSelectedJob && prevSelectedJob.id === job.id 
+        ? null 
+        : job
+    );
+  };
+
+  const handleUpdateAdminJob = async (jobId: string, newPhase: string) => {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ phase: newPhase })
+        .eq('id', jobId);
+      if (error) throw error;
+      // Cập nhật lại UI (state)
+      setAdminJobsList(prev => prev ? prev.map(job => job.id === jobId ? { ...job, phase: newPhase } : job) : prev);
+      setSelectedJob(prev => prev && prev.id === jobId ? { ...prev, phase: newPhase } : prev);
+      // Fetch lại danh sách job để đồng bộ dữ liệu
+      fetchAdminJobs(true, 1);
+      alert('Cập nhật trạng thái thành công!');
+    } catch (err: any) {
+      alert('Cập nhật trạng thái thất bại: ' + (err.message || err));
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    // setNewJob(prev => ({ ...prev, [name]: value })); 
+    // if (formErrors[name]) { ... }
+  };
+
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (searchDebounceRef.current) {
@@ -490,613 +421,111 @@ const AdminJobsPage: React.FC = () => {
     }, 300);
   };
 
-  const handleFilterChange = (filterName: keyof FilterOptions, value: string) => {
-    setFilters(prev => ({ ...prev, [filterName]: value }));
-  };
-  
-  // Validate the form
-  const validateForm = (): Record<string, string> => {
-    const errors: Record<string, string> = {};
-    
-    if (!newJob.position_title.trim()) {
-      errors.position_title = 'Job title is required';
-    }
-    if (!newJob.client_id) {
-      errors.client_id = 'Client is required';
-    }
-    if (!newJob.hr_contact_id) {
-      errors.hr_contact_id = 'HR contact is required';
-    }
-    if (!newJob.phase) {
-      errors.phase = 'Phase is required';
-    }
-    if (!newJob.job_rank) {
-      errors.job_rank = 'Job rank is required';
-    }
-    
-    return errors;
-  };
-  
-  // Submit new job
-  const handleSubmitJob = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isMounted.current) return;
-
-    // Validate form
-    const errors = validateForm();
-    if (Object.keys(errors).length > 0) {
-      if (isMounted.current) {
-        setFormErrors(errors);
-        setIsSubmitting(false);
-      }
-      return;
-    }
-    
-    if (!isMounted.current) return;
-    setIsSubmitting(true);
-    setFormErrors({});
-    console.log('[AddJob] Submitting job:', newJob);
-    console.log('[AddJob] user:', user);
-    console.log('[AddJob] supabase:', supabase);
-    console.log('[AddJob] session:', session);
-
-    let didTimeout = false;
-    const timeoutId = setTimeout(() => {
-      didTimeout = true;
-      if (isMounted.current) {
-        setFormErrors({ submit: 'Request timed out. Please try again.' });
-        setIsSubmitting(false);
-      }
-    }, 7000);
-
-    try {
-      console.log('[AddJob] Before insert (REST fetch)...');
-      const jobData = {
-        position_title: newJob.position_title,
-        client_id: newJob.client_id,
-        hr_contact_id: newJob.hr_contact_id,
-        phase: newJob.phase,
-        job_rank: newJob.job_rank,
-        min_monthly_salary: newJob.min_monthly_salary,
-        max_monthly_salary: newJob.max_monthly_salary,
-        job_summary: newJob.job_summary,
-        requirements: newJob.requirements,
-        work_location: newJob.work_location,
-        industry_category: newJob.industry_category,
-        job_category: newJob.job_category,
-        owner_id: user?.id,
-        created_by_id: user?.id
-      };
-      const res = await fetch('https://dqnjtkbxtscjikalkajq.supabase.co/rest/v1/jobs', {
-        method: 'POST',
-        headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxbmp0a2J4dHNjamlrYWxrYWpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxOTYxNjksImV4cCI6MjA2Mjc3MjE2OX0.sS4N6FIbWa2AZRD4MOTNiJcohRt5FMXCbrec2ROuKYw',
-          'Authorization': session?.access_token ? `Bearer ${session.access_token}` : '',
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
-        },
-        body: JSON.stringify([jobData])
-      });
-      clearTimeout(timeoutId);
-      if (didTimeout) return;
-      const data = await res.json();
-      console.log('[AddJob] After insert (REST fetch):', { status: res.status, data });
-      if (!isMounted.current) return;
-      if (!res.ok) {
-        setFormErrors({ submit: data.message || 'Insert failed' });
-        setIsSubmitting(false);
-        return;
-      }
-      // Reset form and close modal
-      setNewJob({
-        position_title: '',
-        client_id: '',
-        hr_contact_id: '',
-        phase: 'Open',
-        job_rank: 'Medium_Priority',
-        min_monthly_salary: null,
-        max_monthly_salary: null,
-        job_summary: null,
-        requirements: null,
-        work_location: null,
-        industry_category: null,
-        job_category: null
-      });
-      setFormErrors({});
-      setShowAddModal(false);
-      // Refresh jobs list
-      await fetchAdminJobs(true, 1);
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (!isMounted.current) return;
-      setFormErrors({ submit: err.message || 'Unknown error' });
-      setIsSubmitting(false);
-    } finally {
-      if (isMounted.current) {
-      setIsSubmitting(false);
-      }
-    }
-  };
-
-  const handleJobClick = (job: JobDisplayAdmin) => {
-    setSelectedJob(prevSelectedJob => 
-      prevSelectedJob && prevSelectedJob.id === job.id 
-        ? null 
-        : job
-    );
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-    };
-  }, []);
-
-  const handleChangeJobPhase = async (jobId: string, newPhase: string) => {
-    try {
-      const { error } = await supabase.from('jobs').update({ phase: newPhase }).eq('id', jobId);
-      if (error) throw error;
-      setAdminJobsList(prev => prev.map(j => j.id === jobId ? { ...j, phase: newPhase } : j));
-      setFilteredJobs(prev => prev.map(j => j.id === jobId ? { ...j, phase: newPhase } : j));
-    } catch (err) {
-      alert('Failed to update status!');
-    }
-  };
-
-  // Đóng modal và reset form khi chuyển route
-  useEffect(() => {
-    setShowAddModal(false);
-    setNewJob({
-      position_title: '',
-      client_id: '',
-      hr_contact_id: '',
-      phase: 'Open',
-      job_rank: 'Medium_Priority',
-      min_monthly_salary: null,
-      max_monthly_salary: null,
-      job_summary: null,
-      requirements: null,
-      work_location: null,
-      industry_category: null,
-      job_category: null
-    });
-    setFormErrors({});
-    setIsSubmitting(false);
-  }, [location.pathname]);
-
-  // Thêm hàm test fetch
-  const testFetch = async () => {
-    try {
-      const res = await fetch('https://dqnjtkbxtscjikalkajq.supabase.co/rest/v1/jobs?select=*', {
-        headers: {
-          apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxbmp0a2J4dHNjamlrYWxrYWpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxOTYxNjksImV4cCI6MjA2Mjc3MjE2OX0.sS4N6FIbWa2AZRD4MOTNiJcohRt5FMXCbrec2ROuKYw',
-          Authorization: session?.access_token ? `Bearer ${session.access_token}` : '',
-        }
-      });
-      const data = await res.json();
-      console.log('Test fetch result:', data);
-    } catch (err) {
-      console.error('Test fetch error:', err);
-    }
-  };
-
-  // console.log just before the return statement
   console.log('[AdminJobsPage] Rendering. Loading:', loadingAdminJobs, 'Error:', errorAdminJobs, 'Filtered Jobs Count:', filteredJobs.length, 'AdminJobsList Count:', adminJobsList ? adminJobsList.length : 0, 'Total Count State:', totalAdminJobsCount);
 
   if (loadingAdminJobs && (!adminJobsList || adminJobsList.length === 0) && pageAdminJobs === 1) { return <p>Loading Jobs...</p>; }
   if (errorAdminJobs) { return ( <div className="container mx-auto p-4 text-center"> <p className="text-red-500">Error loading jobs: {errorAdminJobs}</p> <button onClick={refreshAdminJobs} className="mt-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"> Try Again </button> </div> ); }
 
   return (
-    <div className="container mx-auto p-4">
-       <h1 className="text-2xl font-bold">
-          Admin Jobs {totalAdminJobsCount > 0 ? ` (${adminJobsList ? adminJobsList.length : 0}/${totalAdminJobsCount})` : ''}
-        </h1>
-      <div className="flex justify-between items-center mb-4">
+    <div className="max-w-7xl mx-auto p-4">
+      {/* Header lớn */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
         <div>
-          <button 
-            onClick={refreshAdminJobs} 
-            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded mr-2"
-            disabled={loadingAdminJobs}
-          >
-            {loadingAdminJobs ? 'Refreshing...' : 'Refresh'}
-          </button>
-          <button 
-            onClick={handleAddAdminJob}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Add Job
-          </button>
+          <h1 className="text-3xl font-extrabold text-blue-800 tracking-tight mb-1">Admin Jobs {totalAdminJobsCount > 0 ? `(${adminJobsList.length}/${totalAdminJobsCount})` : ''}</h1>
+          <div className="flex gap-2 flex-wrap">
+            <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">Tổng: {totalAdminJobsCount}</span>
+            {/* Có thể thêm badge phase, ranking tổng quan ở đây */}
+          </div>
         </div>
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow"
+          onClick={() => navigate('/tables/jobs/add')}
+        >
+          + Tạo Job mới
+        </button>
       </div>
 
-      {/* Search and Filters */}
-      {!selectedJob && (
-        <>
-          <div className="mb-6">
+      {/* Filter hiện đại */}
+      <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap gap-4 items-center">
             <input 
               type="text" 
-              className="w-full p-3 border rounded"
-              placeholder="Search jobs..."
+          placeholder="Tìm kiếm vị trí, client..."
+          className="border rounded px-3 py-2 w-56"
               value={searchQuery}
-              onChange={handleSearch}
-            />
-          </div>
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        <select className="border rounded px-2 py-2" value={filters.phase} onChange={e => setFilters(f => ({...f, phase: e.target.value}))}>
+          <option value="">Tất cả trạng thái</option>
+          {filterOptions.phases.map(phase => <option key={phase} value={phase}>{phase}</option>)}
+              </select>
+        <select className="border rounded px-2 py-2" value={filters.ranking} onChange={e => setFilters(f => ({...f, ranking: e.target.value}))}>
+          <option value="">Tất cả ranking</option>
+          {filterOptions.rankings.map(rank => <option key={rank} value={rank}>{rank}</option>)}
+              </select>
+        <select className="border rounded px-2 py-2" value={filters.client} onChange={e => setFilters(f => ({...f, client: e.target.value}))}>
+          <option value="">Tất cả client</option>
+          {filterOptions.clients.map(client => <option key={client} value={client}>{client}</option>)}
+              </select>
+        {/* Thêm các filter khác nếu muốn */}
+      </div>
 
-          <div className="mb-6 bg-white p-4 rounded-lg shadow">
-            <h2 className="text-lg font-medium mb-3">Filters</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              {/* Phase Filter */}
-              <select
-                className="border rounded px-3 py-2"
-                value={filters.phase}
-                onChange={e => handleFilterChange('phase', e.target.value)}
+      {/* Danh sách job dạng card đẹp */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredJobs.map(job => (
+          <div
+            key={job.id}
+            className="bg-white rounded-xl shadow-lg p-5 hover:shadow-2xl transition-shadow border border-gray-100 relative group"
               >
-                <option value="">All Phases</option>
-                {filterOptions.phases.map(phase => (
-                  <option key={phase} value={phase}>{PHASE_LABELS[phase]}</option>
-                ))}
-              </select>
-              {/* Rank Filter */}
-              <select
-                className="border rounded px-3 py-2"
-                value={filters.ranking}
-                onChange={e => handleFilterChange('ranking', e.target.value)}
-              >
-                <option value="">All Ranks</option>
-                {filterOptions.rankings.map(rank => (
-                  <option key={rank} value={rank}>{rank.replace(/_/g, ' ')}</option>
-                ))}
-              </select>
-              {/* Location Filter */}
-              <select
-                className="border rounded px-3 py-2"
-                value={filters.location}
-                onChange={e => handleFilterChange('location', e.target.value)}
-              >
-                <option value="">All Locations</option>
-                {filterOptions.locations.map(loc => (
-                  <option key={loc} value={loc}>{loc}</option>
-                ))}
-              </select>
-              {/* Client Filter */}
-              <select
-                className="border rounded px-3 py-2"
-                value={filters.client}
-                onChange={e => handleFilterChange('client', e.target.value)}
-              >
-                <option value="">All Clients</option>
-                {filterOptions.clients.map(client => (
-                  <option key={client} value={client}>{client}</option>
-                ))}
-              </select>
-              {/* Category Filter */}
-              <select
-                className="border rounded px-3 py-2"
-                value={filters.category}
-                onChange={e => handleFilterChange('category', e.target.value)}
-              >
-                <option value="">All Categories</option>
-                {filterOptions.categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-bold text-blue-700 truncate max-w-[70%]">{job.position_title}</h2>
+              <span className={`text-xs font-semibold px-2 py-1 rounded ${job.phase === 'Open' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}>{job.phase}</span>
             </div>
-          </div>
-        </>
-      )}
-
-      {/* Jobs List */}
-      {filteredJobs.length === 0 && !loadingAdminJobs ? (
-        <div className="text-center p-4">
-          <p>No jobs found.</p>
-          <p className="text-sm text-gray-500">Try adjusting your filters or click "Add Job" to create a new one.</p>
-        </div>
-      ) : (
-        <>
-          <div className="space-y-4">
-            {filteredJobs.map((job) => (
-              <div key={job.id} className="bg-white rounded-2xl shadow-lg p-8 mb-8 hover:bg-blue-50 transition">
-                {/* Header card */}
-                <div className="flex items-center justify-between cursor-pointer mb-2" onClick={() => handleJobClick(job)}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="font-extrabold text-2xl text-blue-900">{job.position_title}</span>
-                    {/* Badge client */}
-                    {getRelationalField(job.clients, 'client_name') && (
-                      <span className="px-4 py-2 rounded-full bg-purple-100 text-purple-800 text-base font-bold shadow-sm">
-                        {getRelationalField(job.clients, 'client_name')}
-                      </span>
-                    )}
-                    {job.industry_category && (
-                      <span className="px-4 py-2 rounded-full bg-yellow-100 text-yellow-800 text-base font-bold shadow-sm">{job.industry_category}</span>
-                    )}
-                    {job.job_category && (
-                      <span className="px-4 py-2 rounded-full bg-green-100 text-green-800 text-base font-bold shadow-sm">{job.job_category}</span>
-                    )}
-                    {job.work_location && (
-                      <span className="px-4 py-2 rounded-full bg-blue-100 text-blue-800 text-base font-bold shadow-sm">{job.work_location}</span>
-                    )}
-                    {job.job_rank && (
-                      <span className="px-4 py-2 rounded-full bg-pink-100 text-pink-800 text-base font-bold shadow-sm">{job.job_rank}</span>
-                    )}
-                  </div>
-                  <button type="button" tabIndex={-1} className="focus:outline-none">
-                    <span className={`transform transition-transform text-2xl text-blue-700 ${selectedJob && selectedJob.id === job.id ? 'rotate-90' : ''}`}>▶</span>
-                  </button>
-                </div>
-                {/* Expand chi tiết với hiệu ứng mượt */}
-                <div className={`transition-all duration-350 ease-in-out overflow-hidden ${selectedJob && selectedJob.id === job.id ? 'max-h-[2000px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-2'}`}>
-                  {selectedJob && selectedJob.id === job.id && (
-                    <div className="mt-6 border-t pt-6 grid grid-cols-1 md:grid-cols-3 gap-10">
-                      {/* Cột trái: Financial Details */}
-                      <div className="border-2 border-blue-200 bg-white rounded-2xl shadow-lg p-6 mb-3">
-                        <div className="flex items-center mb-3">
-                          <span className="text-blue-500 mr-2"><svg xmlns='http://www.w3.org/2000/svg' className='inline h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z' /></svg></span>
-                          <h2 className="font-bold text-lg text-blue-700">Financial Details</h2>
-                        </div>
-                        <div className="text-base text-gray-800 space-y-2">
-                          <div className="flex justify-between items-center"><span className="font-semibold">Salary:</span><span>{job.min_monthly_salary && job.max_monthly_salary ? `${job.min_monthly_salary} - ${job.max_monthly_salary}` : 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Commission Rate:</span><span>{job.bonus ?? 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Contract Rate:</span><span>{job.allowance ?? 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Warranty Period:</span><span>{job.probation_period ?? 'N/A'}</span></div>
-                        </div>
-                      </div>
-                      {/* Cột giữa: Details + Dropdown chỉnh status */}
-                      <div className="border-2 border-blue-100 bg-white rounded-2xl shadow p-6 mb-3 flex flex-col gap-4">
-                        <div className="flex items-center mb-3">
-                          <span className="text-blue-500 mr-2"><svg xmlns='http://www.w3.org/2000/svg' className='inline h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z' /></svg></span>
-                          <h2 className="font-bold text-lg text-blue-700">Details</h2>
-                        </div>
-                        <div className="text-base text-gray-800 space-y-2">
-                          <div className="flex justify-between items-center"><span className="font-semibold">Category:</span><span>{job.industry_category ?? 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Job Type:</span><span>{job.job_category ?? 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Location:</span><span>{job.work_location ?? 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Client:</span><span>{getRelationalField(job.clients, 'client_name') ?? 'N/A'}</span></div>
-                          {getClientWebsite(job.clients) && (
-                            <div className="flex justify-between items-center"><span className="font-semibold">Client Website:</span><a href={getClientWebsite(job.clients) || undefined} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-semibold underline">{getClientWebsite(job.clients)}</a></div>
-                          )}
-                        </div>
-                        {/* Dropdown chỉnh status */}
-                        <div className="flex justify-between items-center mt-4">
-                          <span className="font-semibold text-blue-700">Status:</span>
-                          <select
-                            className="border-2 border-blue-300 rounded-xl px-4 py-2 text-base font-semibold bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                            value={job.phase || ''}
-                            onChange={e => handleChangeJobPhase(job.id, e.target.value)}
-                          >
-                            {Object.keys(PHASE_LABELS).map(phase => (
-                              <option key={phase} value={phase}>{PHASE_LABELS[phase]}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      {/* Timestamps Card */}
-                      <div className="border-2 border-yellow-100 bg-white rounded-2xl shadow p-6 mb-3">
-                        <div className="flex items-center mb-3">
-                          <span className="text-yellow-500 mr-2"><svg xmlns='http://www.w3.org/2000/svg' className='inline h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15.232 5.232l3.536 3.536M9 13h6m2 2a2 2 0 11-4 0 2 2 0 014 0zm-6 2a2 2 0 11-4 0 2 2 0 014 0zm-2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0zm2-2a2 2 0 11-4 0 2 2 0 014 0z' /></svg></span>
-                          <h2 className="font-bold text-lg text-yellow-700">Timestamps</h2>
-                        </div>
-                        <div className="text-base text-gray-800 space-y-2">
-                          <div className="flex justify-between items-center"><span className="font-semibold">Created:</span><span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : 'N/A'}</span></div>
-                          <div className="flex justify-between items-center"><span className="font-semibold">Last Updated:</span><span>{job.updated_at ? new Date(job.updated_at).toLocaleDateString() : (job.created_at ? new Date(job.created_at).toLocaleDateString() : 'N/A')}</span></div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {hasMoreAdminJobs && !loadingAdminJobs && (
-            <div className="text-center mt-4">
-              <button 
-                onClick={loadMoreAdminJobs}
-                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-              >
-                Load More
-              </button>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {job.job_rank && <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 rounded">{job.job_rank}</span>}
+              {job.priority && <span className="bg-pink-100 text-pink-700 text-xs px-2 py-0.5 rounded">{job.priority}</span>}
+              {getRelationalField(job.clients, 'client_name') && <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded">{getRelationalField(job.clients, 'client_name')}</span>}
+              {job.work_location && <span className="bg-gray-50 text-gray-700 text-xs px-2 py-0.5 rounded">{job.work_location}</span>}
             </div>
-          )}
-        </>
-      )}
-
-      {loadingAdminJobs && adminJobsList && adminJobsList.length > 0 && (
-        <p className="text-center mt-4 text-gray-600">Updating jobs list...</p>
-      )}
-
-      {/* Add Job Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-2xl relative">
+            <div className="text-sm text-gray-600 mb-2">Lương: {job.min_monthly_salary} - {job.max_monthly_salary} triệu</div>
+            <div className="text-xs text-gray-400 mb-2">Ngày tạo: {job.created_at ? new Date(job.created_at).toLocaleDateString('vi-VN') : ''}</div>
+            {/* Expand chi tiết */}
             <button
-              className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-2xl"
-              onClick={() => setShowAddModal(false)}
-              aria-label="Close"
-            >×</button>
-            <h2 className="text-2xl font-bold mb-6">Add New Job</h2>
-            <form onSubmit={handleSubmitJob}>
-              {/* Position Title */}
-              <div className="mb-4">
-                <label className="block font-semibold mb-1">Position Title <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  name="position_title"
-                  value={newJob.position_title}
-                  onChange={handleInputChange}
-                  className="w-full border rounded px-3 py-2"
-                  required
-                />
-                {formErrors.position_title && <div className="text-red-500 text-sm">{formErrors.position_title}</div>}
+              className="text-blue-500 hover:underline text-xs mb-2"
+              onClick={() => setSelectedJob(selectedJob?.id === job.id ? null : job)}
+            >
+              {selectedJob?.id === job.id ? 'Ẩn chi tiết' : 'Xem chi tiết'}
+            </button>
+            {selectedJob?.id === job.id && (
+              <div className="mt-2 border-t pt-2 text-sm text-gray-700 space-y-1 animate-fade-in">
+                <div><b>Tóm tắt:</b> {job.job_summary || 'Không có'}</div>
+                <div><b>Yêu cầu:</b> {job.requirements || 'Không có'}</div>
+                <div><b>HR Contact:</b> {getRelationalField(job.hr_contacts, 'name') || 'Không có'}</div>
+                <div><b>Owner:</b> {getRelationalField(job.owner_details, 'full_name') || 'Không có'}</div>
+                {/* Thêm các trường khác nếu muốn */}
               </div>
-              {/* Client */}
-              <div className="mb-4">
-                <label className="block font-semibold mb-1">Client <span className="text-red-500">*</span></label>
+            )}
+            {/* Nút chỉnh status */}
+            <div className="flex gap-2 mt-3">
                 <select
-                  name="client_id"
-                  value={newJob.client_id}
-                  onChange={handleClientChange}
-                  className="w-full border rounded px-3 py-2"
-                  required
-                >
-                  <option value="">Select client...</option>
-                  {clientsForForm.map(client => (
-                    <option key={client.id} value={client.id}>{client.client_name}</option>
-                  ))}
-                </select>
-                {formErrors.client_id && <div className="text-red-500 text-sm">{formErrors.client_id}</div>}
-              </div>
-              {/* HR Contact */}
-              <div className="mb-4">
-                <label className="block font-semibold mb-1">HR Contact <span className="text-red-500">*</span></label>
-                <select
-                  name="hr_contact_id"
-                  value={newJob.hr_contact_id}
-                  onChange={handleInputChange}
-                  className="w-full border rounded px-3 py-2"
-                  required
-                >
-                  <option value="">Select HR contact...</option>
-                  {hrContactsForForm.map(hr => (
-                    <option key={hr.id} value={hr.id}>{hr.name}</option>
-                  ))}
-                </select>
-                {formErrors.hr_contact_id && <div className="text-red-500 text-sm">{formErrors.hr_contact_id}</div>}
-              </div>
-              {/* Phase & Rank */}
-              <div className="mb-4 grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-semibold mb-1">Phase <span className="text-red-500">*</span></label>
-                  <select
-                    name="phase"
-                    value={newJob.phase}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                    required
-                  >
-                    {JOB_PHASE_VALUES.map(phase => (
-                      <option key={phase} value={phase}>{phase.replace(/_/g, ' ')}</option>
-                    ))}
+                className="border rounded px-2 py-1 text-xs"
+                value={job.phase}
+                onChange={e => handleUpdateAdminJob(job.id, e.target.value)}
+              >
+                {filterOptions.phases.map(phase => <option key={phase} value={phase}>{phase}</option>)}
                   </select>
-                  {formErrors.phase && <div className="text-red-500 text-sm">{formErrors.phase}</div>}
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Job Rank <span className="text-red-500">*</span></label>
-                  <select
-                    name="job_rank"
-                    value={newJob.job_rank}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                    required
-                  >
-                    {JOB_RANK_VALUES.map(rank => (
-                      <option key={rank} value={rank}>{rank.replace(/_/g, ' ')}</option>
-                    ))}
-                  </select>
-                  {formErrors.job_rank && <div className="text-red-500 text-sm">{formErrors.job_rank}</div>}
-                </div>
-              </div>
-              {/* Salary */}
-              <div className="mb-4 grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-semibold mb-1">Min Monthly Salary</label>
-                  <input
-                    type="number"
-                    name="min_monthly_salary"
-                    value={newJob.min_monthly_salary ?? ''}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                    min={0}
-                  />
-                  {formErrors.min_monthly_salary && <div className="text-red-500 text-sm">{formErrors.min_monthly_salary}</div>}
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Max Monthly Salary</label>
-                  <input
-                    type="number"
-                    name="max_monthly_salary"
-                    value={newJob.max_monthly_salary ?? ''}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                    min={0}
-                  />
-                </div>
-              </div>
-              {/* Job Summary */}
-              <div className="mb-4">
-                <label className="block font-semibold mb-1">Job Summary</label>
-                <textarea
-                  name="job_summary"
-                  value={newJob.job_summary || ''}
-                  onChange={handleInputChange}
-                  className="w-full border rounded px-3 py-2"
-                  rows={3}
-                  placeholder="Mô tả công việc, có thể xuống dòng/gạch đầu dòng..."
-                />
-              </div>
-              {/* Requirements */}
-              <div className="mb-4">
-                <label className="block font-semibold mb-1">Requirements & Skills</label>
-                <textarea
-                  name="requirements"
-                  value={newJob.requirements || ''}
-                  onChange={handleInputChange}
-                  className="w-full border rounded px-3 py-2"
-                  rows={3}
-                  placeholder="Yêu cầu, kỹ năng, kinh nghiệm..."
-                />
-              </div>
-              {/* Location, Category, Job Type */}
-              <div className="mb-4 grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block font-semibold mb-1">Location</label>
-                  <input
-                    type="text"
-                    name="work_location"
-                    value={newJob.work_location || ''}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Industry Category</label>
-                  <input
-                    type="text"
-                    name="industry_category"
-                    value={newJob.industry_category || ''}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Job Category</label>
-                  <input
-                    type="text"
-                    name="job_category"
-                    value={newJob.job_category || ''}
-                    onChange={handleInputChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end mt-6">
                 <button
-                  type="submit"
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded"
-                  disabled={isSubmitting}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-3 py-1 rounded"
+                onClick={() => navigate(`/admin/jobs/detail/${job.id}`)}
                 >
-                  {isSubmitting ? 'Saving...' : 'Save Job'}
-                </button>
+                Xem chi tiết</button>
               </div>
-            </form>
           </div>
+        ))}
         </div>
-      )}
-
-      {/* Nút test fetch debug */}
-      <button onClick={testFetch} className="bg-yellow-400 hover:bg-yellow-500 text-black font-bold py-2 px-4 rounded mb-4">Test fetch Supabase REST</button>
+      {/* Loading, error, empty state */}
+      {loadingAdminJobs && <div className="text-center py-8 text-blue-600 font-semibold">Đang tải danh sách job...</div>}
+      {!loadingAdminJobs && filteredJobs.length === 0 && <div className="text-center py-8 text-gray-500">Không có job nào phù hợp.</div>}
+      {errorAdminJobs && <div className="text-center py-8 text-red-500">{errorAdminJobs}</div>}
     </div>
   );
 };

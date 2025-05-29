@@ -1,7 +1,27 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
+  "compilerOptions": {
+    "allowJs": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": true,
+    "typeRoots": ["./node_modules/@types", "./types"],
+    "lib": ["esnext", "dom"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "../_shared/*": ["./supabase/functions/_shared/*"]
+    }
+  },
+  "include": ["supabase/functions/**/*.ts"],
+  "exclude": ["node_modules"]
 }

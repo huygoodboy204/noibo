@@ -1,14 +1,5 @@
+import React from 'react';
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
-import DefaultInputs from "../../components/form/form-elements/DefaultInputs";
-import InputGroup from "../../components/form/form-elements/InputGroup";
-import DropzoneComponent from "../../components/form/form-elements/DropZone";
-import CheckboxComponents from "../../components/form/form-elements/CheckboxComponents";
-import RadioButtons from "../../components/form/form-elements/RadioButtons";
-import ToggleSwitch from "../../components/form/form-elements/ToggleSwitch";
-import FileInputExample from "../../components/form/form-elements/FileInputExample";
-import SelectInputs from "../../components/form/form-elements/SelectInputs";
-import TextAreaInput from "../../components/form/form-elements/TextAreaInput";
-import InputStates from "../../components/form/form-elements/InputStates";
 import PageMeta from "../../components/common/PageMeta";
 
 export default function FormElements() {
@@ -18,21 +9,19 @@ export default function FormElements() {
         title="Form Elements | TD Consulting App"
         description="Form Elements page for TD Consulting App"
       />
-      <PageBreadcrumb pageTitle="From Elements" />
+      <PageBreadcrumb pageTitle="Form Elements" />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="space-y-6">
-          <DefaultInputs />
-          <SelectInputs />
-          <TextAreaInput />
-          <InputStates />
+          <div className="rounded-sm border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
+            <div className="border-b border-stroke py-4 px-6.5 dark:border-strokedark">
+              <h3 className="font-medium text-black dark:text-white">
+                Form Elements
+              </h3>
+            </div>
+            <div className="p-6.5">
+              <p>This page is under construction.</p>
+            </div>
         </div>
-        <div className="space-y-6">
-          <InputGroup />
-          <FileInputExample />
-          <CheckboxComponents />
-          <RadioButtons />
-          <ToggleSwitch />
-          <DropzoneComponent />
         </div>
       </div>
     </div>

@@ -1,16 +1,58 @@
+import React, { useState } from "react";
 import { useModal } from "../../hooks/useModal";
 import { Modal } from "../ui/modal";
 import Button from "../ui/button/Button";
 import Input from "../form/input/InputField";
 import Label from "../form/Label";
+import { supabase } from "../../supabaseClient";
 
 export default function UserInfoCard() {
   const { isOpen, openModal, closeModal } = useModal();
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState({});
+  const [loading, setLoading] = useState(false);
+
   const handleSave = () => {
     // Handle save logic here
     console.log("Saving changes...");
     closeModal();
   };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (newPassword.length < 8) {
+      setError({
+        newPassword: "Password must be at least 8 characters long",
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError({
+        confirmPassword: "Passwords do not match",
+      });
+      return;
+    }
+
+    setError({});
+    setLoading(true);
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    setLoading(false);
+    if (updateError) {
+      setError({
+        form: updateError.message,
+      });
+    } else {
+      setError({
+        form: 'Đổi mật khẩu thành công! Vui lòng đăng nhập lại.'
+      });
+    }
+  };
+
   return (
     <div className="p-5 border border-gray-200 rounded-2xl dark:border-gray-800 lg:p-6">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">

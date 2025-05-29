@@ -1,0 +1,72 @@
+/* Basic Tiptap Editor Styling */
+.ProseMirror {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db; /* gray-300 */
+  border-top: none;
+  border-radius: 0 0 0.375rem 0.375rem; /* rounded-b-md */
+  min-height: 250px; /* Or your desired height, matching the inline style */
+  outline: none;
+  background-color: white;
+}
+
+.ProseMirror:focus-within {
+  border-color: #6366f1; /* indigo-500 */
+  box-shadow: 0 0 0 1px #6366f1; /* ring-1 ring-indigo-500 */
+}
+
+/* Menu Bar Styling */
+.menu-bar {
+  /* Styles are mostly handled by Tailwind in the component */
+  /* You can add specific overrides here if needed */
+}
+
+.menu-bar button {
+  font-weight: 500;
+  font-size: 0.875rem; /* text-sm */
+  /* Add transitions for a smoother hover effect if desired */
+  /* transition: background-color 0.2s ease-in-out; */
+}
+
+.menu-bar button.is-active {
+  background-color: #d1d5db; /* gray-300, matching the component style for active */
+  /* color: #1f2937; /* gray-800 or your preferred active text color */
+}
+
+/* Example for icons using ::before pseudo-element (if you use a font icon library) */
+/*
+.menu-bar button.bold-icon::before {
+  content: '\\f032'; // Example FontAwesome bold icon
+  font-family: 'Font Awesome 5 Free';
+  font-weight: 900;
+  margin-right: 0.25rem;
+}
+*/
+
+/* Style for links within the editor */
+.ProseMirror a {
+  color: #4f46e5; /* indigo-600 */
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ProseMirror p {
+    margin-bottom: 0.5rem;
+}
+
+.ProseMirror ul, .ProseMirror ol {
+    padding-left: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+.ProseMirror ul li {
+    list-style-type: disc;
+}
+.ProseMirror ol li {
+    list-style-type: decimal;
+}
+.ProseMirror blockquote {
+    border-left: 3px solid #cbd5e1; /* cool-gray-300 */
+    margin-left: 1rem;
+    padding-left: 1rem;
+    font-style: italic;
+    color: #4b5563; /* gray-600 */
+} 

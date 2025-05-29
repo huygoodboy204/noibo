@@ -1,0 +1,41 @@
+.styled-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 4px 24px 0 rgba(30,41,59,.06);
+}
+.styled-table th, .styled-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+.styled-table th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+.styled-table tbody tr:hover {
+  background-color: #f1f5f9;
+}
+.styled-table td .action-btn {
+  margin-right: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+  color: inherit;
+}
+.styled-table td .action-btn:hover {
+  background: #f1f5f9;
+}
+.styled-table td .action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+} 

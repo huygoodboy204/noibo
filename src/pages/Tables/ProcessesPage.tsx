@@ -46,6 +46,7 @@ const ProcessesPage: React.FC = () => {
   const location = useLocation();
   const { session } = useAuth();
 
+  // State for data, loading, error, pagination
   const [processes, setProcesses] = useState<ProcessDisplay[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +54,7 @@ const ProcessesPage: React.FC = () => {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [totalCount, setTotalCount] = useState<number>(0);
 
+  // Refs for managing fetch lifecycle
   const isMounted = useRef(true);
   const isCurrentlyFetching = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -61,8 +63,113 @@ const ProcessesPage: React.FC = () => {
   const prevPathname = useRef<string>('');
   const mountTimerId = useRef<NodeJS.Timeout | null>(null);
 
+  // UI specific state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [editingProcess, setEditingProcess] = useState<ProcessDisplay | null>(null);
+  const [deletingProcessId, setDeletingProcessId] = useState<string | null>(null);
+
+  // Cleanup function
+  const cleanup = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (mountTimerId.current) {
+      clearTimeout(mountTimerId.current);
+      mountTimerId.current = null;
+    }
+    if (visibilityDebounceRef.current) {
+      clearTimeout(visibilityDebounceRef.current);
+      visibilityDebounceRef.current = null;
+    }
+    isMounted.current = false;
+  };
+
+  // Handle visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && location.pathname === '/tables/processes') {
+        console.log('[ProcessesPage] Page/tab became visible');
+        
+        if (visibilityDebounceRef.current) {
+          clearTimeout(visibilityDebounceRef.current);
+        }
+        
+        visibilityDebounceRef.current = window.setTimeout(() => {
+          if (isMounted.current) {
+            fetchProcesses(true);
+          }
+          visibilityDebounceRef.current = null;
+        }, 500);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityDebounceRef.current) {
+        clearTimeout(visibilityDebounceRef.current);
+      }
+    };
+  }, [location.pathname]);
+
+  // Handle navigation
+  useEffect(() => {
+    if (isMounted.current && location.pathname === '/tables/processes') {
+      if (prevPathname.current && prevPathname.current !== location.pathname) {
+        console.log(`[ProcessesPage] Navigated to processes page. Previous path: ${prevPathname.current}`);
+        fetchProcesses(true);
+      }
+      prevPathname.current = location.pathname;
+    }
+  }, [location.pathname]);
+
+  // Initial mount
+  useEffect(() => {
+    console.log('[ProcessesPage] Component mounted');
+    isMounted.current = true;
+    prevPathname.current = location.pathname;
+    
+    setProcesses([]);
+    setPage(1);
+    setHasMore(true);
+    setError(null);
+    setTotalCount(0);
+    isCurrentlyFetching.current = false;
+    lastSuccessfulFetchRef.current = 0;
+
+    if (mountTimerId.current) clearTimeout(mountTimerId.current);
+    mountTimerId.current = setTimeout(() => {
+      if (isMounted.current) {
+        fetchProcesses(true);
+      }
+    }, 100);
+
+    return cleanup;
+  }, [location.pathname]);
+
+  // Handle page change
+  useEffect(() => {
+    if (page > 1 && isMounted.current) {
+      fetchProcesses(false, page);
+    }
+  }, [page]);
+
+  // Handle online/offline
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[ProcessesPage] Browser is online, refreshing data');
+      if (isMounted.current) {
+        fetchProcesses(true);
+      }
+    };
+    
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
 
   const fetchTotalProcessesCount = useCallback(async (signal?: AbortSignal) => {
     console.log('[ProcessesPage] Fetching total processes count...');
@@ -169,54 +276,6 @@ const ProcessesPage: React.FC = () => {
     fetchProcesses(true, 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // fetchProcesses will be in closure
-
-  useEffect(() => { // Mount/unmount
-    isMounted.current = true; 
-    prevPathname.current = location.pathname; 
-    console.log(`[ProcessesPage] Component mounted or path changed: ${location.pathname}. Initializing process list.`);
-    setProcesses([]); setPage(1); setHasMore(true); setError(null); setTotalCount(0);
-    isCurrentlyFetching.current = false; lastSuccessfulFetchRef.current = 0;
-    if (mountTimerId.current) clearTimeout(mountTimerId.current);
-    mountTimerId.current = setTimeout(() => { 
-        if (isMounted.current) { 
-            console.log('[ProcessesPage] Mount useEffect: Calling fetchProcesses(true, 1)');
-            fetchProcesses(true, 1); 
-        }
-    }, 50);
-    return () => { 
-        if(mountTimerId.current) clearTimeout(mountTimerId.current); 
-        isMounted.current = false; 
-        if (abortControllerRef.current) { abortControllerRef.current.abort('ProcessesPage unmounted/path changed'); abortControllerRef.current = null; } 
-        if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); 
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Only location.pathname. fetchProcesses from closure.
-
-  useEffect(() => { // Page change
-    if (page > 1 && isMounted.current) {
-        console.log(`[ProcessesPage] Page changed to ${page}, fetching data.`);
-        fetchProcesses(false, page);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]); // Only page. fetchProcesses from closure.
-
-  useEffect(() => { // Visibility change
-    const handleVisibilityChange = () => { 
-        if (document.visibilityState === 'visible' && isMounted.current && location.pathname.includes('/tables/processes')) { 
-            if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); 
-            visibilityDebounceRef.current = window.setTimeout(() => { 
-                if (isMounted.current) {
-                    console.log('[ProcessesPage] Visibility change: Calling fetchProcesses(true, 1)');
-                    fetchProcesses(true, 1); 
-                }
-                visibilityDebounceRef.current = null; 
-            }, 300); 
-        }
-    }; 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => { document.removeEventListener('visibilitychange', handleVisibilityChange); if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Only location.pathname. fetchProcesses from closure.
 
   const handleStatusChange = async (processId: string, newStatus: string) => {
     try {

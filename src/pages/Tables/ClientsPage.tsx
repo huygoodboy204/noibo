@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useClients } from '../../hooks/useClients';
 import EditClientModal from '../../components/EditClientModal';
-import { Client } from '../../types';
+import { Client } from '../../types/index';
+import { toast } from 'react-hot-toast';
+import { supabase } from '../../supabaseClient';
 
 const RANK_OPTIONS = ['A', 'B', 'C', 'D'];
 const PHASE_OPTIONS = [
@@ -27,6 +29,14 @@ const getPhaseColor = (phase: string) => {
     default: return 'bg-blue-400';
   }
 };
+
+// Định nghĩa type mở rộng cho client có owner
+interface ClientWithOwner extends Client {
+  owner?: {
+    full_name?: string;
+    email?: string;
+  };
+}
 
 const ClientsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -65,13 +75,32 @@ const ClientsPage: React.FC = () => {
     await refresh();
   };
 
+  const handleDeleteClient = async (clientId: string) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa client này?')) {
+      try {
+        const { error } = await supabase
+          .from('clients')
+          .delete()
+          .eq('id', clientId);
+
+        if (error) throw error;
+
+        toast.success('Xóa client thành công');
+        await refresh();
+      } catch (error: any) {
+        console.error('Error deleting client:', error);
+        toast.error(error.message || 'Không thể xóa client');
+      }
+    }
+  };
+
   // Lấy danh sách unique cho filter dropdown
-  const ownerOptions = Array.from(new Set(clients.map(c => c.owner?.full_name).filter(Boolean)));
+  const ownerOptions = Array.from(new Set((clients as ClientWithOwner[]).map(c => c.owner?.full_name).filter(Boolean)));
   const locationOptions = Array.from(new Set(clients.map(c => c.location).filter(Boolean)));
   const industryOptions = Array.from(new Set(clients.map(c => c.client_industry).filter(Boolean)));
   const categoryOptions = Array.from(new Set(clients.map(c => c.client_category).filter(Boolean)));
 
-  const filteredClients = clients.filter(client =>
+  const filteredClients = (clients as ClientWithOwner[]).filter(client =>
     (searchTerm === '' || client.client_name.toLowerCase().includes(searchTerm.toLowerCase())) &&
     (filterRank === '' || client.client_rank === filterRank) &&
     (filterPhase === '' || client.phase === filterPhase) &&
@@ -118,21 +147,21 @@ const ClientsPage: React.FC = () => {
             <option value="">All Phases</option>
             {PHASE_OPTIONS.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
           </select>
-          <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} className="px-2 py-2 border rounded">
+          <select value={filterOwner || ''} onChange={e => setFilterOwner(e.target.value)} className="px-2 py-2 border rounded">
             <option value="">All Owners</option>
             {ownerOptions.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
-          <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)} className="px-2 py-2 border rounded">
+          <select value={filterLocation || ''} onChange={e => setFilterLocation(e.target.value)} className="px-2 py-2 border rounded">
             <option value="">All Locations</option>
-            {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
+            {locationOptions.map(l => <option key={l || ''} value={l || ''}>{l}</option>)}
           </select>
-          <select value={filterIndustry} onChange={e => setFilterIndustry(e.target.value)} className="px-2 py-2 border rounded">
+          <select value={filterIndustry || ''} onChange={e => setFilterIndustry(e.target.value)} className="px-2 py-2 border rounded">
             <option value="">All Industries</option>
-            {industryOptions.map(i => <option key={i} value={i}>{i}</option>)}
+            {industryOptions.map(i => <option key={i || ''} value={i || ''}>{i}</option>)}
           </select>
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-2 py-2 border rounded">
+          <select value={filterCategory || ''} onChange={e => setFilterCategory(e.target.value)} className="px-2 py-2 border rounded">
             <option value="">All Categories</option>
-            {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+            {categoryOptions.map(c => <option key={c || ''} value={c || ''}>{c}</option>)}
           </select>
           <button 
             onClick={refresh}
@@ -155,49 +184,43 @@ const ClientsPage: React.FC = () => {
         </div>
       ) : (
         <>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filteredClients.map((client) => (
-              <div key={client.id} className="rounded-xl shadow-lg bg-white p-6 flex flex-col gap-2 border hover:shadow-2xl transition-all">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="font-bold text-xl text-gray-800 flex-1">{client.client_name}</h3>
-                  {client.client_rank && (
-                    <span className={`text-xs px-2 py-1 rounded-full text-white font-semibold ${getBadgeColor(client.client_rank)}`}>{client.client_rank}</span>
-                  )}
-                  {client.phase && (
-                    <span className={`text-xs px-2 py-1 rounded-full text-white font-semibold ${getPhaseColor(client.phase)}`}>{client.phase.replace(/_/g, ' ')}</span>
-                  )}
+          <div className="space-y-6 mt-6">
+            {filteredClients.map(client => (
+              <div key={client.id} className="flex flex-col md:flex-row items-center bg-white rounded-2xl shadow-lg border border-pink-100 p-6 hover:shadow-2xl transition-shadow duration-200">
+                {/* Avatar/logo */}
+                <div className="flex-shrink-0 w-16 h-16 rounded-full bg-pink-100 flex items-center justify-center text-pink-600 text-2xl font-bold mr-0 md:mr-6 mb-4 md:mb-0">
+                  {client.client_name?.charAt(0) || 'C'}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
-                  {client.registration_no && <div><span className="font-semibold">Reg No:</span> {client.registration_no}</div>}
-                  {client.website_url && <div><span className="font-semibold">Website:</span> <a href={client.website_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{client.website_url}</a></div>}
-                  {client.client_category && <div><span className="font-semibold">Category:</span> {client.client_category}</div>}
-                  {client.client_industry && <div><span className="font-semibold">Industry:</span> {client.client_industry}</div>}
-                  {client.location && <div><span className="font-semibold">Location:</span> {client.location}</div>}
-                  {client.address && <div><span className="font-semibold">Address:</span> {client.address}</div>}
-                  {client.business_overview && <div className="md:col-span-2"><span className="font-semibold">Business Overview:</span> {client.business_overview}</div>}
-                  {client.working_hours && <div><span className="font-semibold">Working Hours:</span> {client.working_hours}</div>}
-                  {client.insurance && <div><span className="font-semibold">Insurance:</span> {client.insurance}</div>}
-                  {client.medical_expense && <div><span className="font-semibold">Medical Expense:</span> {client.medical_expense}</div>}
-                  {client.bonus && <div><span className="font-semibold">Bonus:</span> {client.bonus}</div>}
-                  {client.allowance && <div><span className="font-semibold">Allowance:</span> {client.allowance}</div>}
-                  {client.sick_leave && <div><span className="font-semibold">Sick Leave:</span> {client.sick_leave}</div>}
-                  {client.annual_leave && <div><span className="font-semibold">Annual Leave:</span> {client.annual_leave}</div>}
-                  {client.probation_period && <div><span className="font-semibold">Probation Period:</span> {client.probation_period}</div>}
-                  {client.phase_date && <div><span className="font-semibold">Phase Date:</span> {client.phase_date}</div>}
-                  {client.phase_memo && <div className="md:col-span-2"><span className="font-semibold">Phase Memo:</span> {client.phase_memo}</div>}
-                  {client.created_by_id && <div><span className="font-semibold">Created By:</span> {client.created_by_id}</div>}
-                  {client.updated_by_id && <div><span className="font-semibold">Updated By:</span> {client.updated_by_id}</div>}
-                  {client.created_at && <div><span className="font-semibold">Created:</span> {new Date(client.created_at).toLocaleString()}</div>}
-                  {client.updated_at && <div><span className="font-semibold">Updated:</span> {new Date(client.updated_at).toLocaleString()}</div>}
-                  {client.owner_id && <div><span className="font-semibold">Owner:</span> {client.owner?.full_name || client.owner_id}</div>}
+                {/* Thông tin chính */}
+                <div className="flex-1 w-full md:w-auto">
+                  <div className="flex flex-col md:flex-row md:items-center gap-2">
+                    <h2 className="text-xl font-bold text-pink-700 mr-2">{client.client_name}</h2>
+                    {client.website_url && <a href={client.website_url} target="_blank" rel="noopener noreferrer" className="text-pink-500 hover:underline text-sm">{client.website_url}</a>}
+                    {client.client_industry && <span className="text-xs bg-pink-50 text-pink-500 rounded px-2 py-1 ml-0 md:ml-2">{client.client_industry}</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-600">
+                    <span className="flex items-center gap-1"><i className="fas fa-user-tie text-pink-400"></i> Người sở hữu: <span className="font-semibold text-pink-700">{(client as ClientWithOwner).owner?.full_name || client.owner_id || 'N/A'}</span></span>
+                    <span className="flex items-center gap-1"><i className="fas fa-star text-pink-400"></i> Xếp hạng: <span className="font-semibold text-pink-700">{client.client_rank || 'N/A'}</span></span>
+                    <span className="flex items-center gap-1"><i className="fas fa-map-marker-alt text-pink-400"></i> Địa chỉ: {client.address || 'N/A'}</span>
+                  </div>
                 </div>
-                <div className="flex justify-end mt-2">
-                  <button
-                    onClick={() => handleUpdateClient(client.id)}
-                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm"
-                  >
-                    Edit
-                  </button>
+                {/* Thông tin phụ & badge trạng thái & nút xem chi tiết */}
+                <div className="flex flex-col items-end gap-2 mt-4 md:mt-0 md:ml-6 w-full md:w-auto">
+                  {client.phase && <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold shadow-sm mb-2">{client.phase.replace(/_/g, ' ')}</span>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleDeleteClient(client.id)}
+                      className="text-red-600 hover:text-red-800 font-semibold flex items-center gap-1 text-sm"
+                    >
+                      <i className="fas fa-trash"></i>
+                    </button>
+                    <button
+                      onClick={() => handleUpdateClient(client.id)}
+                      className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 text-sm"
+                    >
+                      <i className="fas fa-edit"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

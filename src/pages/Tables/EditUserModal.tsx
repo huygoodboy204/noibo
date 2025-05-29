@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useModalLayout } from '../../contexts/ModalLayoutContext';
 
+// Thêm type declaration cho import.meta.env
+declare global {
+  interface ImportMeta {
+    env: {
+      VITE_SUPABASE_URL: string;
+      VITE_SUPABASE_ANON_KEY: string;
+      VITE_SUPABASE_SERVICE_ROLE_KEY: string;
+    }
+  }
+}
+
 interface UserEdit {
   id: string;
   full_name: string;
@@ -50,14 +61,40 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ user, onClose, onSave }) 
     setLoading(true);
     setError(null);
     try {
-      // Gọi API update user (PATCH Supabase REST API)
-      const SUPABASE_URL = 'https://dqnjtkbxtscjikalkajq.supabase.co';
-      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRxbmp0a2J4dHNjamlrYWxrYWpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxOTYxNjksImV4cCI6MjA2Mjc3MjE2OX0.sS4N6FIbWa2AZRD4MOTNiJcohRt5FMXCbrec2ROuKYw';
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${user.id}`, {
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const SUPABASE_SERVICE_ROLE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+      // Request 1: Update user metadata trong auth
+      const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_metadata: {
+            full_name: form.full_name,
+            role: form.role
+          },
+          app_metadata: {
+            role: form.role
+          }
+        })
+      });
+
+      if (!authRes.ok) {
+        const authErr = await authRes.json();
+        throw new Error(authErr.message || 'Failed to update user metadata');
+      }
+
+      // Request 2: Update user trong bảng users
+      const dbRes = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${user.id}`, {
         method: 'PATCH',
         headers: {
           'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=representation',
         },
@@ -68,16 +105,17 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ user, onClose, onSave }) 
           is_active: form.is_active,
         }),
       });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || 'Update failed');
+
+      if (!dbRes.ok) {
+        const dbErr = await dbRes.json();
+        throw new Error(dbErr.message || 'Failed to update user in database');
       }
-      const updatedArr = await res.json();
+
+      const updatedArr = await dbRes.json();
       const updated = updatedArr && updatedArr[0];
       if (updated && updated.id) {
         onSave(updated);
-      } else if (res.status === 200) {
-        // Nếu status 200 nhưng không trả về user, vẫn coi là thành công
+      } else if (dbRes.status === 200) {
         onSave({ ...user, ...form });
       } else {
         throw new Error('Update failed: No user returned');

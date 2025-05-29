@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { useModalLayout } from '../../../src/contexts/ModalLayoutContext';
+import { useModalLayout } from '../contexts/ModalLayoutContext';
 
 const CLIENT_RANK_OPTIONS = ['A', 'B', 'C', 'D'];
 const CLIENT_PHASE_OPTIONS = ['Prospecting', 'Qualification', 'Needs_Analysis', 'Proposal_Sent', 'Negotiation', 'Closed_Won', 'Closed_Lost', 'On_Hold'];

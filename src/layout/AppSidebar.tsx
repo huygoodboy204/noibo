@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
+import { useAuth } from "../contexts/AuthContext";
+import { ROLE_PERMISSIONS, UserRole } from "../constants/rolePermissions";
 
 // Assume these icons are imported from an icon library
 import {
@@ -71,6 +73,7 @@ const othersItems: NavItem[] = []; // This should now be empty
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
+  const { userRole } = useAuth();
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -136,9 +139,30 @@ const AppSidebar: React.FC = () => {
     });
   };
 
+  const filterMenuItemsByRole = (items: NavItem[]): NavItem[] => {
+    if (!userRole || !(userRole in ROLE_PERMISSIONS)) {
+      return [];
+    }
+
+    const role = userRole as UserRole;
+    return items.map(item => {
+      if (item.subItems) {
+        const filteredSubItems = item.subItems.filter(subItem => 
+          ROLE_PERMISSIONS[role].allowedPages.includes(subItem.path)
+        );
+        return filteredSubItems.length > 0 
+          ? { ...item, subItems: filteredSubItems }
+          : null;
+      }
+      return ROLE_PERMISSIONS[role].allowedPages.includes(item.path || '')
+        ? item
+        : null;
+    }).filter(Boolean) as NavItem[];
+  };
+
   const renderMenuItems = (items: NavItem[], menuType: "main" | "others") => (
     <ul className="flex flex-col gap-4">
-      {items.map((nav, index) => (
+      {filterMenuItemsByRole(items).map((nav, index) => (
         <li key={nav.name}>
           {nav.subItems ? (
             <button

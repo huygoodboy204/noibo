@@ -1,15 +1,10 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import SignIn from "./pages/AuthPages/SignIn";
 import NotFound from "./pages/OtherPage/NotFound";
 import UserProfiles from "./pages/UserProfiles";
-import Videos from "./pages/UiElements/Videos";
-import Images from "./pages/UiElements/Images";
-import Alerts from "./pages/UiElements/Alerts";
-import Badges from "./pages/UiElements/Badges";
-import Avatars from "./pages/UiElements/Avatars";
-import Buttons from "./pages/UiElements/Buttons";
 import LineChart from "./pages/Charts/LineChart";
 import BarChart from "./pages/Charts/BarChart";
 import Calendar from "./pages/Calendar";
@@ -20,7 +15,7 @@ import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
-import { ModalLayoutProvider } from '../../src/contexts/ModalLayoutContext';
+import { ModalLayoutProvider } from "./contexts/ModalLayoutContext";
 
 // New Page Imports
 import DashboardPage from "./pages/Dashboard/DashboardPage";
@@ -37,7 +32,11 @@ import AddClientPage from "./pages/Tables/AddClientPage";
 import AdminJobsPage from "./pages/Tables/AdminJobsPage";
 import AddJobPage from "./pages/Tables/AddJobPage";
 import AddHrContactPage from './pages/Tables/AddHrContactPage';
-import AddUserPage from "./pages/Tables/users/new";
+import AddUserPage from "./pages/Tables/AddUserPage";
+import AddSalePage from "./pages/Tables/AddSalePage";
+import JobDetailPage from "./pages/Tables/JobDetailPage";
+import SetPassword from "./pages/AuthPages/SetPassword";
+import AccountSettingsPage from './pages/AccountSettingsPage';
 
 export default function App() {
   const AppRoutes = () => {
@@ -57,8 +56,6 @@ export default function App() {
                 path="/tables/candidates" 
                 element={<CandidatesPage key={location.state?.timestamp || '/tables/candidates'} />} 
               />
-              {/* AddCandidatePage might need specific roles if different from viewing candidates */}
-              {/* For now, assume same roles can access add page, or refine later based on RLS for INSERT */}
               <Route 
                 path="/tables/candidates/new" 
                 element={<AddCandidatePage />} 
@@ -92,34 +89,30 @@ export default function App() {
                 element={<SalesPage key={location.state?.timestamp || '/tables/sales'} /> } 
               />
               <Route 
-                path="/tables/users" // Users page might have more restrictive view roles (e.g., Admin/Manager/HR only based on your RLS)
-                                      // For now, keeping it with the general table roles for consistency in this step
+                path="/tables/sales/add" 
+                element={<AddSalePage />} 
+              />
+              <Route 
+                path="/tables/users"
                 element={<UsersPage key={location.state?.timestamp || '/tables/users'} />} 
               />
               <Route path="/tables/users/new" element={<AddUserPage />} />
               <Route path="/tables/add-hr-contact" element={<AddHrContactPage />} />
+              <Route path="/tables/job-detail/:id" element={<JobDetailPage />} />
             </Route>
 
-            {/* Others Page - Kept for now, review if needed */}
+            {/* Others Page */}
             <Route path="/profile" element={<UserProfiles />} />
             <Route path="/calendar" element={<Calendar key={location.state?.timestamp || 'calendar'} />} />
             <Route path="/blank" element={<Blank />} />
 
-            {/* Forms - Kept for now, review if needed */}
+            {/* Forms */}
             <Route path="/form-elements" element={<FormElements />} />
 
-            {/* Tables - Old basic table route, can be removed or repurposed */}
+            {/* Tables */}
             <Route path="/basic-tables" element={<BasicTables />} />
 
-            {/* Ui Elements - Kept for now, review if needed */}
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/avatars" element={<Avatars />} />
-            <Route path="/badge" element={<Badges />} />
-            <Route path="/buttons" element={<Buttons />} />
-            <Route path="/images" element={<Images />} />
-            <Route path="/videos" element={<Videos />} />
-
-            {/* Charts - Kept for now, review if needed */}
+            {/* Charts */}
             <Route path="/line-chart" element={<LineChart />} />
             <Route path="/bar-chart" element={<BarChart />} />
 
@@ -127,6 +120,9 @@ export default function App() {
             <Route path="/jobs/admin" element={<AdminJobsPage key={location.state?.timestamp || 'admin-jobs'} />} />
             <Route path="/jobs" element={<JobsPage key={location.state?.timestamp || 'jobs'} />} />
             <Route path="/jobs/add" element={<AddJobPage key={location.state?.timestamp || 'add-job'} />} />
+            <Route path="/tables/jobs/add" element={<AddJobPage key={location.state?.timestamp || 'add-job'} />} />
+            <Route path="/admin/jobs/detail/:id" element={<JobDetailPage />} />
+            <Route path="/admin/jobs/edit/:id" element={<AddJobPage />} />
             <Route path="/clients" element={<ClientsPage key={location.state?.timestamp || 'clients'} />} />
             <Route path="/hr-contacts" element={<HrContactsPage key={location.state?.timestamp || 'hr-contacts'} />} />
             <Route path="/candidates" element={<CandidatesPage key={location.state?.timestamp || 'candidates'} />} />
@@ -134,11 +130,15 @@ export default function App() {
             <Route path="/processes" element={<ProcessesPage key={location.state?.timestamp || 'processes'} />} />
             <Route path="/sales" element={<SalesPage key={location.state?.timestamp || 'sales'} />} />
             <Route path="/users" element={<UsersPage key={location.state?.timestamp || 'users'} />} />
+
+            {/* Account Settings Page */}
+            <Route path="/account/settings" element={<AccountSettingsPage />} />
           </Route>
         </Route>
 
         {/* Auth Layout - These are public */}
         <Route path="/signin" element={<SignIn />} />
+        <Route path="/auth/invite" element={<SetPassword />} />
 
         {/* Fallback Route */}
         <Route path="*" element={<NotFound />} />

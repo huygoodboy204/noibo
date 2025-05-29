@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
+import { supabase } from '../../supabaseClient';
+import { useDropzone } from 'react-dropzone';
 
 // ENUM values from your DB schema
 const GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer_Not_To_Say'];
@@ -66,11 +68,22 @@ const AddCandidatePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // State cho CV upload
+  const [selectedCvFile, setSelectedCvFile] = useState<File | null>(null);
+  const [uploadingCv, setUploadingCv] = useState(false);
+  const [cvUploadError, setCvUploadError] = useState<string | null>(null);
+  const [uploadedCvFileName, setUploadedCvFileName] = useState<string | null>(null);
+
   // Reset form khi chuyển route
   useEffect(() => {
     setFormData({ name: '', cv_link: '' });
     setError(null);
     setLoading(false);
+    // Reset CV states
+    setSelectedCvFile(null);
+    setUploadingCv(false);
+    setCvUploadError(null);
+    setUploadedCvFileName(null);
   }, [location.pathname]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -290,7 +303,50 @@ const AddCandidatePage: React.FC = () => {
         inputElement = <select {...commonProps} value={value as string}>{renderSelectOptions(ENGLISH_LEVEL_OPTIONS)}</select>;
         break;
       case 'cv_link':
-        inputElement = <input type="url" {...commonProps} value={value as string} placeholder="https://drive.google.com/..." />;
+        // CV Upload specific UI
+        inputElement = (
+          <div>
+            <div {...getRootProps()} className={`mt-1 p-6 border-2 border-dashed rounded-md cursor-pointer 
+              ${isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}
+              ${(selectedCvFile || uploadedCvFileName || formData.cv_link) && !uploadingCv ? 'border-green-500 bg-green-50' : ''}
+              ${uploadingCv ? 'border-blue-500 bg-blue-50' : ''}
+              ${cvUploadError ? 'border-red-500 bg-red-50' : ''}
+            `}>
+              <input {...getInputProps()} />
+              {uploadingCv ? (
+                <p className="text-blue-600">Đang tải lên CV...</p>
+              ) : cvUploadError ? (
+                <p className="text-red-600">Lỗi: {cvUploadError}</p>
+              ) : uploadedCvFileName ? (
+                <p className="text-green-700">CV đã tải lên: <a href={formData.cv_link || '#'} target="_blank" rel="noopener noreferrer" className="underline hover:text-green-800">{uploadedCvFileName}</a></p>
+              ) : selectedCvFile ? (
+                <p className="text-gray-700">Đã chọn: {selectedCvFile.name}</p>
+              ) : formData.cv_link ? (
+                <p className="text-green-700">CV đã có: <a href={formData.cv_link} target="_blank" rel="noopener noreferrer" className="underline hover:text-green-800">{formData.cv_link.substring(formData.cv_link.lastIndexOf('/') + 1).split('-').pop() || 'Xem CV'}</a></p>
+              ) : (
+                <p className="text-gray-500">Kéo thả file CV vào đây, hoặc nhấp để chọn file (PDF, DOC, DOCX, max 5MB)</p>
+              )}
+            </div>
+            {(uploadedCvFileName || formData.cv_link || selectedCvFile) && !uploadingCv && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCvFile(null);
+                  setUploadedCvFileName(null);
+                  setCvUploadError(null);
+                  setFormData(prev => ({ ...prev, cv_link: '' }));
+                }}
+                className="mt-2 text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                disabled={uploadingCv}
+              >
+                Xóa / Thay CV khác
+              </button>
+            )}
+            {/* Input ẩn để giữ giá trị cv_link trong form data, nếu cần thiết cho logic hiện tại */}
+            {/* Tuy nhiên, giá trị đã được set trực tiếp vào formData.cv_link nên có thể không cần thiết nữa */}
+            {/* <input type=\"hidden\" name=\"cv_link\" value={formData.cv_link || ''} /> */}
+          </div>
+        );
         break;
       default:
         inputElement = <input type="text" {...commonProps} value={value as string} />;
@@ -312,6 +368,88 @@ const AddCandidatePage: React.FC = () => {
         {fields.map(field => renderFormField(field))}
     </fieldset>
   );
+
+  const handleCvUpload = async (file: File) => {
+    if (!session) {
+      setCvUploadError("User not authenticated for CV upload.");
+      return;
+    }
+    setUploadingCv(true);
+    setCvUploadError(null);
+    setSelectedCvFile(file); // Giới hạn kích thước file (ví dụ 5MB)
+    setUploadedCvFileName(null); 
+
+    try {
+      const fileName = `${session.user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`; // Sanitize file name
+      const filePath = `public/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('cv') // SỬ DỤNG BUCKET 'cv'
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false, 
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('cv') // SỬ DỤNG BUCKET 'cv'
+        .getPublicUrl(filePath);
+
+      if (!publicUrlData || !publicUrlData.publicUrl) {
+        throw new Error('Could not get public URL for CV.');
+      }
+
+      setFormData(prev => ({ ...prev, cv_link: publicUrlData.publicUrl }));
+      setUploadedCvFileName(file.name); 
+      // setSelectedCvFile(null); // Không clear ở đây nữa, để có thể hiển thị tên file đang chọn
+      
+    } catch (err: any) {
+      console.error("Error uploading CV:", err);
+      setCvUploadError(err.message || 'Failed to upload CV.');
+      setFormData(prev => ({ ...prev, cv_link: '' })); 
+      setUploadedCvFileName(null);
+      setSelectedCvFile(null); // Clear file nếu có lỗi
+    } finally {
+      setUploadingCv(false);
+    }
+  };
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles && acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      // Giới hạn kích thước file (ví dụ 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setCvUploadError('File is too large. Maximum size is 5MB.');
+        setSelectedCvFile(null);
+        setUploadedCvFileName(null);
+        setFormData(prev => ({ ...prev, cv_link: '' }));
+        return;
+      }
+      // Kiểm tra loại file (ví dụ: PDF, DOC, DOCX)
+      const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (!allowedTypes.includes(file.type)) {
+        setCvUploadError('Invalid file type. Only PDF, DOC, DOCX are allowed.');
+        setSelectedCvFile(null);
+        setUploadedCvFileName(null);
+        setFormData(prev => ({ ...prev, cv_link: '' }));
+        return;
+      }
+      setCvUploadError(null); // Clear previous error
+      setSelectedCvFile(file); // Cập nhật file đang được chọn
+      setUploadedCvFileName(null); // Xóa tên file đã upload trước đó (nếu có)
+      setFormData(prev => ({ ...prev, cv_link: '' })); // Xóa link CV cũ trước khi upload mới
+      handleCvUpload(file); // Gọi handleCvUpload sau khi đã set selectedCvFile
+    }
+  }, [session]); 
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    multiple: false,
+    disabled: uploadingCv 
+  });
 
   return (
     <div className="container mx-auto p-4">

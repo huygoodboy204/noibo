@@ -6,7 +6,7 @@ import { Process } from '../types';
 interface ProcessesState {
   data: Process[];
   loading: boolean;
-  error: string | null;
+  error: Error | null;
   hasMore: boolean;
   totalCount: number;
   page: number;
@@ -14,7 +14,7 @@ interface ProcessesState {
 
 const INITIAL_STATE: ProcessesState = {
   data: [],
-  loading: true,
+  loading: false,
   error: null,
   hasMore: true,
   totalCount: 0,
@@ -105,7 +105,7 @@ export function useProcesses() {
       if (isMounted.current) {
         setState(prev => ({
           ...prev,
-          error: err instanceof Error ? err.message : String(err),
+          error: err instanceof Error ? err : new Error(err.message),
           data: state.page === 1 ? [] : prev.data,
           loading: false
         }));
@@ -159,10 +159,15 @@ export function useProcesses() {
     };
   }, [fetchProcesses]);
 
+  const reset = useCallback(() => {
+    setState(INITIAL_STATE);
+  }, []);
+
   return {
     ...state,
     refresh: () => fetchProcesses(true),
     loadMore,
-    updateProcessStatus
+    updateProcessStatus,
+    reset
   };
 } 

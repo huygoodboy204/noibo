@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
+import EditHrContactModal from '../../components/EditHrContactModal';
 
 // Constants for fetching
 const PAGE_SIZE = 20;
@@ -45,8 +46,9 @@ const getRelationalField = <T, K extends keyof T>(
 const HrContactsPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { session } = useAuth(); // Removed isAuthenticated as it's part of useAuth value anyway
+  const { session } = useAuth();
 
+  // State for data, loading, error, pagination
   const [hrContacts, setHrContacts] = useState<HrContactDisplay[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +56,7 @@ const HrContactsPage: React.FC = () => {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [totalCount, setTotalCount] = useState<number>(0);
 
+  // Refs for managing fetch lifecycle
   const isMounted = useRef(true);
   const isCurrentlyFetching = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -61,6 +64,113 @@ const HrContactsPage: React.FC = () => {
   const visibilityDebounceRef = useRef<number | null>(null);
   const prevPathname = useRef<string>('');
   const mountTimerId = useRef<NodeJS.Timeout | null>(null);
+
+  // UI specific state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingHrContact, setEditingHrContact] = useState<HrContactDisplay | null>(null);
+  const [deletingHrContactId, setDeletingHrContactId] = useState<string | null>(null);
+
+  // Cleanup function
+  const cleanup = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (mountTimerId.current) {
+      clearTimeout(mountTimerId.current);
+      mountTimerId.current = null;
+    }
+    if (visibilityDebounceRef.current) {
+      clearTimeout(visibilityDebounceRef.current);
+      visibilityDebounceRef.current = null;
+    }
+    isMounted.current = false;
+  };
+
+  // Handle visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && location.pathname === '/tables/hr-contacts') {
+        console.log('[HrContactsPage] Page/tab became visible');
+        
+        if (visibilityDebounceRef.current) {
+          clearTimeout(visibilityDebounceRef.current);
+        }
+        
+        visibilityDebounceRef.current = window.setTimeout(() => {
+          if (isMounted.current) {
+            fetchHrContacts(true);
+          }
+          visibilityDebounceRef.current = null;
+        }, 500);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityDebounceRef.current) {
+        clearTimeout(visibilityDebounceRef.current);
+      }
+    };
+  }, [location.pathname]);
+
+  // Handle navigation
+  useEffect(() => {
+    if (isMounted.current && location.pathname === '/tables/hr-contacts') {
+      if (prevPathname.current && prevPathname.current !== location.pathname) {
+        console.log(`[HrContactsPage] Navigated to hr-contacts page. Previous path: ${prevPathname.current}`);
+        fetchHrContacts(true);
+      }
+      prevPathname.current = location.pathname;
+    }
+  }, [location.pathname]);
+
+  // Initial mount
+  useEffect(() => {
+    console.log('[HrContactsPage] Component mounted');
+    isMounted.current = true;
+    prevPathname.current = location.pathname;
+    
+    setHrContacts([]);
+    setPage(1);
+    setHasMore(true);
+    setError(null);
+    setTotalCount(0);
+    isCurrentlyFetching.current = false;
+    lastSuccessfulFetchRef.current = 0;
+
+    if (mountTimerId.current) clearTimeout(mountTimerId.current);
+    mountTimerId.current = setTimeout(() => {
+      if (isMounted.current) {
+        fetchHrContacts(true);
+      }
+    }, 100);
+
+    return cleanup;
+  }, [location.pathname]);
+
+  // Handle page change
+  useEffect(() => {
+    if (page > 1 && isMounted.current) {
+      fetchHrContacts(false, page);
+    }
+  }, [page]);
+
+  // Handle online/offline
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[HrContactsPage] Browser is online, refreshing data');
+      if (isMounted.current) {
+        fetchHrContacts(true);
+      }
+    };
+    
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
 
   const fetchTotalHrContactsCount = useCallback(async (signal?: AbortSignal) => {
     console.log('[HrContactsPage] Fetching total hr_contacts count...');
@@ -171,66 +281,39 @@ const HrContactsPage: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps, fetchHrContacts from closure
 
-  useEffect(() => { // Mount/unmount and path change effect
-    isMounted.current = true; 
-    prevPathname.current = location.pathname; 
-    console.log(`[HrContactsPage] Component mounted or path changed: ${location.pathname}. Initializing.`);
-    setHrContacts([]); 
-    setPage(1); 
-    setHasMore(true); 
-    setError(null); 
-    setTotalCount(0); 
-    isCurrentlyFetching.current = false; 
-    lastSuccessfulFetchRef.current = 0;
-
-    if (mountTimerId.current) clearTimeout(mountTimerId.current);
-    mountTimerId.current = setTimeout(() => { 
-        if (isMounted.current) { 
-            console.log('[HrContactsPage] Mount useEffect: Calling fetchHrContacts(true, 1)');
-            fetchHrContacts(true, 1); 
-        }
-    }, 50);
-    return () => { 
-        if(mountTimerId.current) clearTimeout(mountTimerId.current); 
-        isMounted.current = false; 
-        if (abortControllerRef.current) { abortControllerRef.current.abort('HrContactsPage unmounted/path changed'); abortControllerRef.current = null; } 
-        if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); 
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Only on path change
-
-  useEffect(() => { // Page change effect for pagination
-    if (page > 1 && isMounted.current) {
-        console.log(`[HrContactsPage] Page changed to ${page}, fetching next page.`);
-        fetchHrContacts(false, page); 
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]); // Only page
-
-  useEffect(() => { // Visibility change effect
-    const handleVisibilityChange = () => { 
-        if (document.visibilityState === 'visible' && isMounted.current && location.pathname.includes('/tables/hr-contacts')) { 
-            if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); 
-            visibilityDebounceRef.current = window.setTimeout(() => { 
-                if (isMounted.current) {
-                    console.log('[HrContactsPage] Visibility change: Resetting page and forcing fetch.');
-                    setPage(1);
-                    fetchHrContacts(true, 1); 
-                }
-                visibilityDebounceRef.current = null; 
-            }, 300); 
-        }
-    }; 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => { document.removeEventListener('visibilitychange', handleVisibilityChange); if (visibilityDebounceRef.current !== null) window.clearTimeout(visibilityDebounceRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Only on path change
-
   const handleAddHrContact = () => {
     navigate('/tables/add-hr-contact');
   };
-  const handleUpdateHrContact = (hrContactId: string) => {
-    navigate(`/tables/edit-hr-contact/${hrContactId}`);
+  const handleDeleteHrContact = async (hrContactId: string) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa liên hệ này?')) {
+      try {
+        const { error } = await supabase
+          .from('hr_contacts')
+          .delete()
+          .eq('id', hrContactId);
+
+        if (error) throw error;
+
+        toast.success('Xóa liên hệ thành công');
+        await refreshHrContacts();
+      } catch (error: any) {
+        console.error('Error deleting HR contact:', error);
+        toast.error(error.message || 'Không thể xóa liên hệ');
+      }
+    }
+  };
+
+  const handleUpdateHrContact = (hrContact: HrContactDisplay) => {
+    setEditingHrContact(hrContact);
+  };
+
+  const handleCloseEditModal = () => {
+    setEditingHrContact(null);
+  };
+
+  const handleSaveEditHrContact = async (updatedHrContact: HrContactDisplay) => {
+    setEditingHrContact(null);
+    await refreshHrContacts();
   };
 
   if (loading && !hrContacts.length && page === 1) return <p>Loading HR contacts...</p>;
@@ -270,14 +353,35 @@ const HrContactsPage: React.FC = () => {
                   </td>
                   <td className="py-3 px-6 text-left">{contact.position_title || 'N/A'}</td>
                   <td className="py-3 px-6 text-left">
-                    {contact.email_1 ? (<a href={`mailto:${contact.email_1}`} className="text-blue-500 hover:underline">{contact.email_1}</a>) : ('N/A')}
+                    {contact.email_1 ? (
+                      <a href={`mailto:${contact.email_1}`} className="text-blue-500 hover:underline">
+                        {contact.email_1}
+                      </a>
+                    ) : (
+                      'N/A'
+                    )}
                   </td>
                   <td className="py-3 px-6 text-left">{contact.phone_1 || 'N/A'}</td>
-                  <td className="py-3 px-6 text-left">{getRelationalField(contact.client, 'client_name') || 'N/A'}</td>
+                  <td className="py-3 px-6 text-left">
+                    {getRelationalField(contact.client, 'client_name') || 'N/A'}
+                  </td>
                   <td className="py-3 px-6 text-center">
-                    <button onClick={() => handleUpdateHrContact(contact.id)} className="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">
-                      Edit
-                    </button>
+                    <div className="flex justify-center space-x-2">
+                      <button
+                        onClick={() => handleUpdateHrContact(contact)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Edit"
+                      >
+                        <i className="fas fa-edit"></i>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteHrContact(contact.id)}
+                        className="text-red-600 hover:text-red-800"
+                        title="Delete"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -285,15 +389,31 @@ const HrContactsPage: React.FC = () => {
           </table>
         </div>
       )}
-       {hasMore && !loading && (
-            <div className="text-center mt-4">
-              <button onClick={loadMoreHrContacts} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" disabled={loading}>
-                {loading ? 'Loading...' : 'Load More'}
-              </button>
-            </div>
-        )}
-        {loading && hrContacts.length > 0 && page > 1 && (
-             <p className="text-center mt-4 text-gray-600">Loading more HR contacts...</p>
+      
+      {hasMore && !loading && (
+        <div className="text-center mt-4">
+          <button
+            onClick={loadMoreHrContacts}
+            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            disabled={loading}
+          >
+            {loading ? 'Loading...' : 'Load More'}
+          </button>
+        </div>
+      )}
+
+      {loading && hrContacts.length > 0 && page > 1 && (
+        <p className="text-center mt-4 text-gray-600">
+          Loading more HR contacts...
+        </p>
+      )}
+
+      {editingHrContact && (
+        <EditHrContactModal
+          hrContact={editingHrContact}
+          onClose={handleCloseEditModal}
+          onSave={handleSaveEditHrContact}
+        />
       )}
     </div>
   );

@@ -20,7 +20,6 @@ const options = {
     persistSession: true, // Cho phép lưu session vào localStorage
     autoRefreshToken: true, // Tự động refresh token
     detectSessionInUrl: true, // Hữu ích cho OAuth
-    storage: noOpStorage,    // Quan trọng: giữ lại cài đặt này
   },
   db: {
     schema: 'public'
